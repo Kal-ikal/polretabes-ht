@@ -160,40 +160,23 @@ BEGIN
       RAISE EXCEPTION 'Sudah ada pengajuan peminjaman aktif untuk unit ini. Harap tunggu persetujuan admin.';
     END IF;
 
-    -- ADMIN: Langsung APPROVED + status aset -> dipinjam
-    IF v_user_role = 'admin' THEN
-      INSERT INTO public.transactions (
-        asset_id, borrower_id, borrower_name, borrower_nrp, kesatuan,
-        action, status, reviewed_by, reviewed_at, notes, created_at, updated_at
-      )
-      VALUES (
-        p_asset_id, v_actual_borrower_id, v_b_name, v_b_nrp, v_b_kesatuan,
-        'BORROW', 'APPROVED', v_user_id, v_now, p_notes, v_now, v_now
-      )
-      RETURNING id INTO v_tx_id;
+    -- Peminjaman Awal: SELALU PENDING (Menunggu persetujuan Admin di Admin Panel)
+    -- Status aset tetap 'tersedia', hingga Admin menyetujui (APPROVED) dan fisik di-scan (confirm_physical_handover)
+    INSERT INTO public.transactions (
+      asset_id, borrower_id, borrower_name, borrower_nrp, kesatuan,
+      action, status, notes, created_at, updated_at
+    )
+    VALUES (
+      p_asset_id, v_actual_borrower_id, v_b_name, v_b_nrp, v_b_kesatuan,
+      'BORROW', 'PENDING', p_notes, v_now, v_now
+    )
+    RETURNING id INTO v_tx_id;
 
-      UPDATE public.assets
-      SET status = 'dipinjam'::asset_status, updated_at = v_now
-      WHERE id = p_asset_id;
-
-      BEGIN
-        INSERT INTO public.asset_state_logs (asset_id, from_state, to_state, triggered_by, reason)
-        VALUES (p_asset_id, (v_asset.status)::asset_status, 'dipinjam'::asset_status, v_user_id,
-          'Peminjaman langsung oleh admin (' || v_b_name || ')');
-      EXCEPTION WHEN OTHERS THEN NULL; END;
-
-    -- PETUGAS: PENDING (Menunggu persetujuan admin)
-    ELSE
-      INSERT INTO public.transactions (
-        asset_id, borrower_id, borrower_name, borrower_nrp, kesatuan,
-        action, status, notes, created_at, updated_at
-      )
-      VALUES (
-        p_asset_id, v_actual_borrower_id, v_b_name, v_b_nrp, v_b_kesatuan,
-        'BORROW', 'PENDING', p_notes, v_now, v_now
-      )
-      RETURNING id INTO v_tx_id;
-    END IF;
+    BEGIN
+      INSERT INTO public.asset_state_logs (asset_id, from_state, to_state, triggered_by, reason)
+      VALUES (p_asset_id, (v_asset.status)::asset_status, (v_asset.status)::asset_status, v_user_id,
+        'Pengajuan peminjaman baru oleh ' || v_b_name || ' (Menunggu Persetujuan Admin)');
+    EXCEPTION WHEN OTHERS THEN NULL; END;
 
   -- =============================================
   -- AKSI: RETURN (Pengembalian)
@@ -235,7 +218,7 @@ BEGIN
     'transaction_id', v_tx_id,
     'asset_id', p_asset_id,
     'action', v_action_upper,
-    'status', CASE WHEN v_user_role = 'admin' THEN 'APPROVED' ELSE 'PENDING' END
+    'status', CASE WHEN v_action_upper = 'RETURN' THEN 'APPROVED' ELSE 'PENDING' END
   );
 END;
 $$;

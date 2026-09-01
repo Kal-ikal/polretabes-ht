@@ -107,37 +107,31 @@ export default function AssetDetailScreen() {
       }
 
       // 3. Check if there's an active PENDING borrow request for this unit
-      const { data: pendingTx } = await supabase
-        .from("transactions")
-        .select("id, borrower_name, kesatuan, status, action")
-        .eq("asset_id", id)
-        .eq("status", "PENDING")
-        .eq("action", "BORROW")
-        .maybeSingle();
-
-      if (pendingTx) {
+      if (
+        latestTx &&
+        latestTx.action === "BORROW" &&
+        latestTx.status === "PENDING" &&
+        !latestTx.cancelled_at &&
+        (assetData?.status || "").toLowerCase() === "tersedia"
+      ) {
         setPendingLoanInfo({
           isPending: true,
-          borrowerName: pendingTx.borrower_name || "Petugas Lain",
-          kesatuan: pendingTx.kesatuan || "",
+          borrowerName: latestTx.borrower_name || "Petugas Lain",
+          kesatuan: latestTx.kesatuan || "",
         });
       } else {
         setPendingLoanInfo({ isPending: false });
       }
 
       // 4. Check if there's an APPROVED borrow awaiting physical handover
-      const { data: approvedTx } = await supabase
-        .from("transactions")
-        .select("*, asset:assets(*), reviewer:profiles!transactions_reviewed_by_fkey(*)")
-        .eq("asset_id", id)
-        .eq("status", "APPROVED")
-        .eq("action", "BORROW")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (approvedTx && (assetData?.status || "").toLowerCase() === "tersedia") {
-        setApprovedAwaitingTx(approvedTx as Transaction);
+      if (
+        latestTx &&
+        latestTx.action === "BORROW" &&
+        latestTx.status === "APPROVED" &&
+        !latestTx.cancelled_at &&
+        (assetData?.status || "").toLowerCase() === "tersedia"
+      ) {
+        setApprovedAwaitingTx(latestTx as Transaction);
       } else {
         setApprovedAwaitingTx(null);
       }
@@ -257,7 +251,7 @@ export default function AssetDetailScreen() {
     setModalConfig({
       visible: true,
       title: "Konfirmasi Peminjaman",
-      message: `Proses peminjaman unit ${asset.name} untuk ${borrowerName.trim()} (${kesatuan.trim()})?`,
+      message: `Proses pengajuan peminjaman unit ${asset.name} untuk ${borrowerName.trim()} (${kesatuan.trim()})?`,
       icon: "📻",
       onConfirm: executeSubmit,
     });
@@ -286,20 +280,26 @@ export default function AssetDetailScreen() {
         return;
       }
 
-      const { data: activePending } = await supabase
+      // Check the latest transaction on this asset
+      const { data: latestExistingTx } = await supabase
         .from("transactions")
-        .select("id, borrower_name")
+        .select("id, borrower_name, status, action, cancelled_at")
         .eq("asset_id", id!)
-        .eq("status", "PENDING")
-        .eq("action", "BORROW")
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
-      if (activePending) {
+      if (
+        latestExistingTx &&
+        latestExistingTx.action === "BORROW" &&
+        latestExistingTx.status === "PENDING" &&
+        !latestExistingTx.cancelled_at
+      ) {
         setSubmitting(false);
         setModalConfig({
           visible: true,
           title: "Unit Sedang Diproses",
-          message: `Unit HT ini sudah diajukan oleh ${activePending.borrower_name || "petugas lain"} dan sedang menunggu persetujuan admin. 1 unit hanya dapat dipinjam oleh 1 akun.`,
+          message: `Unit HT ini sudah diajukan oleh ${latestExistingTx.borrower_name || "petugas lain"} dan sedang menunggu persetujuan admin. 1 unit hanya dapat dipinjam oleh 1 akun.`,
           icon: "⏳",
           isDanger: true,
           onConfirm: () => router.replace("/(tabs)"),
@@ -308,27 +308,23 @@ export default function AssetDetailScreen() {
       }
 
       // Check if there's already an APPROVED borrow waiting for physical handover scan
-      const { data: approvedBorrow } = await supabase
-        .from("transactions")
-        .select("id, borrower_name")
-        .eq("asset_id", id!)
-        .eq("status", "APPROVED")
-        .eq("action", "BORROW")
-        .maybeSingle();
-
-      if (approvedBorrow) {
+      if (
+        latestExistingTx &&
+        latestExistingTx.action === "BORROW" &&
+        latestExistingTx.status === "APPROVED" &&
+        !latestExistingTx.cancelled_at
+      ) {
         setSubmitting(false);
         setModalConfig({
           visible: true,
           title: "Unit Sudah Disetujui",
-          message: `Peminjaman unit HT ini sudah disetujui admin untuk ${approvedBorrow.borrower_name || "petugas"}. Silakan scan QR Code fisik unit HT untuk menyelesaikan serah terima.`,
+          message: `Peminjaman unit HT ini sudah disetujui admin untuk ${latestExistingTx.borrower_name || "petugas"}. Silakan scan QR Code fisik unit HT untuk menyelesaikan serah terima.`,
           icon: "✅",
           onConfirm: () => router.replace("/(tabs)/scan"),
         });
         return;
       }
 
-      let rpcSucceeded = true;
       const { error: rpcError } = await supabase.rpc("process_asset_transaction", {
         p_asset_id: id!,
         p_action: "BORROW",
@@ -341,9 +337,7 @@ export default function AssetDetailScreen() {
 
       if (rpcError) {
         console.warn("RPC process_asset_transaction returned error, executing direct fallback:", rpcError);
-        rpcSucceeded = false;
 
-        const isAdminUser = profile?.role === "admin";
         const nowIso = new Date().toISOString();
 
         const { error: insertErr } = await supabase.from("transactions").insert({
@@ -353,12 +347,11 @@ export default function AssetDetailScreen() {
           borrower_nrp: borrowerNrp.trim(),
           kesatuan: kesatuan.trim(),
           action: "BORROW",
-          status: isAdminUser ? "APPROVED" : "PENDING",
+          status: "PENDING",
           condition: "baik",
           notes: null,
           created_at: nowIso,
           updated_at: nowIso,
-          ...(isAdminUser ? { reviewed_by: profile?.id, reviewed_at: nowIso } : {}),
         });
 
         if (insertErr) {
@@ -373,13 +366,6 @@ export default function AssetDetailScreen() {
           });
           return;
         }
-
-        if (isAdminUser) {
-          await supabase
-            .from("assets")
-            .update({ status: "dipinjam", updated_at: nowIso })
-            .eq("id", id!);
-        }
       }
 
       setSubmitting(false);
@@ -388,15 +374,11 @@ export default function AssetDetailScreen() {
         SafeHaptics.notificationAsync();
       } catch {}
 
-      const isAdminUser = profile?.role === "admin";
-
       setModalConfig({
         visible: true,
-        title: isAdminUser ? "Peminjaman Berhasil! 🎉" : "Pengajuan Terkirim",
-        message: isAdminUser
-          ? `Peminjaman unit ${asset?.name} berhasil diproses. Status unit resmi beralih ke DIPINJAM untuk ${borrowerName.trim()} (${kesatuan.trim()}).`
-          : `Pengajuan peminjaman unit ${asset?.name} terkirim. Menunggu persetujuan admin.`,
-        icon: isAdminUser ? "✅" : "⏳",
+        title: "Pengajuan Terkirim! ⏳",
+        message: `Pengajuan peminjaman unit ${asset?.name} (${asset?.code}) untuk ${borrowerName.trim()} (${kesatuan.trim()}) berhasil dikirim. Menunggu persetujuan Admin sebelum unit siap di-scan untuk serah terima fisik.`,
+        icon: "⏳",
         onConfirm: () => router.replace("/(tabs)"),
       });
     } catch (err: any) {

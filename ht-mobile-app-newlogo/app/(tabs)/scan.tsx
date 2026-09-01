@@ -387,23 +387,8 @@ export default function ScanScreen() {
       }
 
       // ====================================================================
-      // TRANSACTION LOOKUP: Check for APPROVED borrow FIRST (batch or single)
-      // This is critical because stale PENDING transactions may exist on top
-      // of the batch-approved BORROW transaction, causing false Case 3 hits.
+      // TRANSACTION LOOKUP: Check the single latest transaction for this asset
       // ====================================================================
-
-      // Priority Query: Find any APPROVED BORROW transaction for this asset
-      const { data: approvedBorrowTx } = await supabase
-        .from("transactions")
-        .select("*")
-        .eq("asset_id", asset.id)
-        .eq("action", "BORROW")
-        .eq("status", "APPROVED")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      // Secondary Query: Find the absolute latest transaction (any status)
       const { data: latestTx } = await supabase
         .from("transactions")
         .select("*")
@@ -412,10 +397,34 @@ export default function ScanScreen() {
         .limit(1)
         .maybeSingle();
 
+      const isAssetDipinjam = (asset.status || "").toLowerCase() === "dipinjam";
+      const isAssetRusak = (asset.status || "").toLowerCase() === "rusak";
+      const isAssetTersedia = !isAssetDipinjam && !isAssetRusak;
+
+      // An approved borrow awaiting physical pickup exists ONLY IF:
+      // 1. Asset status is 'tersedia'
+      // 2. The absolute latest transaction is BORROW with status APPROVED (not cancelled)
+      const isApprovedAwaitingPickup =
+        isAssetTersedia &&
+        latestTx &&
+        latestTx.action === "BORROW" &&
+        latestTx.status === "APPROVED" &&
+        !latestTx.cancelled_at;
+
+      // A pending borrow waiting for admin approval exists ONLY IF:
+      // 1. Asset status is 'tersedia'
+      // 2. The absolute latest transaction is BORROW with status PENDING (not cancelled)
+      const isPendingAdminApproval =
+        isAssetTersedia &&
+        latestTx &&
+        latestTx.action === "BORROW" &&
+        latestTx.status === "PENDING" &&
+        !latestTx.cancelled_at;
+
       // ====================================================================
       // Case 1: Asset is currently DIPINJAM -> Route to Return Screen
       // ====================================================================
-      if ((asset.status || "").toLowerCase() === "dipinjam") {
+      if (isAssetDipinjam) {
         router.push(`/return/${asset.id}`);
         setTimeout(() => {
           setScanned(false);
@@ -425,17 +434,35 @@ export default function ScanScreen() {
       }
 
       // ====================================================================
-      // Case 2: APPROVED BORROW exists (batch or single) -> Physical Handover
-      // This takes priority over any stale PENDING transactions
+      // Case 2: Asset is RUSAK -> Alert maintenance
       // ====================================================================
-      if (approvedBorrowTx) {
+      if (isAssetRusak) {
+        setToastConfig({
+          visible: true,
+          title: "Unit Rusak / Maintenance ⚠️",
+          message: `Unit ${asset.name} (${asset.code}) saat ini berstatus RUSAK dan tidak dapat dipinjam.`,
+          icon: "❌",
+          isDanger: true,
+        });
+        setTimeout(() => {
+          setScanned(false);
+          isProcessingRef.current = false;
+        }, 2200);
+        return;
+      }
+
+      // ====================================================================
+      // Case 3: APPROVED BORROW exists -> Physical Handover (Mode Siap Scan Fisik)
+      // ====================================================================
+      if (isApprovedAwaitingPickup && latestTx) {
+        const approvedBorrowTx = latestTx;
         // Ownership verification for non-admin Petugas
         if (!isAdmin && profile?.id && approvedBorrowTx.borrower_id && approvedBorrowTx.borrower_id !== profile.id) {
           setLoading(false);
           setToastConfig({
             visible: true,
             title: "Unit Milik Petugas Lain! ❌",
-            message: `Unit "${asset.name}" (${asset.code}) telah disetujui untuk serah terima kepada ${approvedBorrowTx.borrower_name || 'petugas lain'}, bukan untuk akun Anda.`,
+            message: `Unit "${asset.name}" (${asset.code}) telah disetujui untuk serah terima kepada ${approvedBorrowTx.borrower_name || "petugas lain"}, bukan untuk akun Anda.`,
             icon: "⚠️",
             isDanger: true,
           });
@@ -492,27 +519,26 @@ export default function ScanScreen() {
         return;
       }
 
-      const borrowerName = latestTx?.borrower_name || "Petugas";
-
       // ====================================================================
-      // Case 3: Borrow request is PENDING admin approval (no APPROVED exists)
+      // Case 4: Borrow request is PENDING admin approval
       // ====================================================================
-      if (latestTx && latestTx.action === "BORROW" && latestTx.status === "PENDING") {
+      if (isPendingAdminApproval && latestTx) {
+        const borrowerName = latestTx.borrower_name || "Petugas";
         setToastConfig({
           visible: true,
-          title: "Menunggu Persetujuan Admin",
-          message: `Pengajuan peminjaman unit ${asset.name} (${asset.code}) oleh ${borrowerName} masih PENDING. Minta Admin menyetujui di Web Admin Panel terlebih dahulu sebelum memindai fisik barang.`,
+          title: "Menunggu Persetujuan Admin ⏳",
+          message: `Pengajuan peminjaman unit ${asset.name} (${asset.code}) oleh ${borrowerName} masih PENDING. Minta Admin menyetujui di Admin Panel terlebih dahulu sebelum memindai fisik barang.`,
           icon: "⏳",
         });
         setTimeout(() => {
           setScanned(false);
           isProcessingRef.current = false;
-        }, 2200);
+        }, 2500);
         return;
       }
 
       // ====================================================================
-      // Case 4: No active transaction -> Direct Scan (new borrow request)
+      // Case 5: No active borrow -> Open Borrow Request Form (or select batch)
       // ====================================================================
       if (isBatchMode) {
         toggleSelectBatchAsset(asset as Asset);
@@ -764,7 +790,7 @@ export default function ScanScreen() {
                     borderColor: theme.inputBorder || (isDark ? "#334155" : "#CBD5E1"),
                     borderRadius: 14,
                     paddingHorizontal: 14,
-                    paddingVertical: Platform.OS === "ios" ? 12 : 4,
+                    paddingVertical: 10,
                   }}
                 >
                   <Ionicons name="search-outline" size={18} color={theme.textMuted} style={{ marginRight: 8 }} />

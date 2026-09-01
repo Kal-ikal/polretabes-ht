@@ -214,15 +214,26 @@ export default function HomeScreen() {
         setAvailableAssets((catalog as Asset[]).filter((a) => a.status === "tersedia" && !pendingAssetIds.has(a.id)));
       }
 
-      // 2. Fetch my pending borrow requests
+      // 2. Fetch my pending and approved borrow requests awaiting physical scan
       const { data: pendingData } = await supabase
         .from("transactions")
         .select("*, asset:assets(*)")
         .eq("action", "BORROW")
-        .eq("status", "PENDING")
+        .in("status", ["PENDING", "APPROVED"])
+        .is("cancelled_at", null)
         .order("created_at", { ascending: false });
 
-      setMyPendingLoans((pendingData as Transaction[]) ?? []);
+      if (pendingData) {
+        // Filter: Keep PENDING or APPROVED where asset is still 'tersedia' (awaiting physical pickup)
+        const awaitingList = (pendingData as Transaction[]).filter(
+          (t) =>
+            t.status === "PENDING" ||
+            (t.status === "APPROVED" && (t.asset?.status || "").toLowerCase() === "tersedia")
+        );
+        setMyPendingLoans(awaitingList);
+      } else {
+        setMyPendingLoans([]);
+      }
 
       // 3. Fetch active borrowed loans
       const { data: borrowedAssets } = await supabase
