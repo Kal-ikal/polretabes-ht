@@ -1,0 +1,34 @@
+# Expo & Metro
+.expo/
+dist/
+web-build/
+
+# Dependencies
+node_modules/
+
+# Environment Variables
+.env.local
+.env.*.local
+
+# Native builds & caches
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro / npm cache
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# IDE & OS
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+.vercel
