@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -39,6 +39,14 @@ export default function LoanQRScreen() {
     icon: string;
     isDanger?: boolean;
   }>({ visible: false, title: "", message: "", icon: "✅" });
+
+  const handleGoBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/admin");
+    }
+  };
 
   const fetchLoanDetails = useCallback(async (showLoadingSpinner = false) => {
     if (!id) return;
@@ -122,15 +130,21 @@ export default function LoanQRScreen() {
     setProcessingAssetId(asset.id);
 
     try {
-      const { error: handoverErr } = await supabase.rpc("confirm_physical_handover", {
-        p_asset_id: asset.id,
+      const { error: handoverErr } = await supabase.rpc("scan_to_borrow", {
+        p_scanned_qr: asset.code,
+        p_tx_id: txItem.id,
+        p_user_id: profile?.id || null,
       });
 
       if (handoverErr) {
-        await supabase
-          .from("assets")
-          .update({ status: "dipinjam", updated_at: new Date().toISOString() })
-          .eq("id", asset.id);
+        setToastConfig({
+          visible: true,
+          title: "Gagal Serah Terima",
+          message: handoverErr.message || "Gagal memperbarui status unit HT.",
+          icon: "❌",
+          isDanger: true,
+        });
+        return;
       }
 
       if (Platform.OS !== "web") {
@@ -166,19 +180,23 @@ export default function LoanQRScreen() {
     setProcessingAssetId(asset.id);
 
     try {
-      await supabase
-        .from("assets")
-        .update({ status: "tersedia", updated_at: new Date().toISOString() })
-        .eq("id", asset.id);
+      const { error: returnErr } = await supabase.rpc("process_asset_transaction", {
+        p_asset_id: asset.id,
+        p_action: "RETURN",
+        p_condition: "baik",
+        p_notes: `Admin Verifikasi Pengembalian QR Code (${txItem.borrower_name || "Petugas"})`,
+      });
 
-      try {
-        await supabase.from("asset_state_logs").insert({
-          asset_id: asset.id,
-          from_state: "dipinjam",
-          to_state: "tersedia",
-          reason: `Admin Verifikasi Pengembalian QR Code (${txItem.borrower_name || "Petugas"})`,
+      if (returnErr) {
+        setToastConfig({
+          visible: true,
+          title: "Gagal Pengembalian",
+          message: returnErr.message || "Gagal memperbarui status pengembalian HT.",
+          icon: "❌",
+          isDanger: true,
         });
-      } catch {}
+        return;
+      }
 
       if (Platform.OS !== "web") {
         try {
@@ -189,7 +207,7 @@ export default function LoanQRScreen() {
       setToastConfig({
         visible: true,
         title: "Pengembalian Berhasil! 📥",
-        message: `Unit ${asset.name} (${asset.code}) berhasil dikembalikan ke gudang! Status unit TERSEDIA.`,
+        message: `Unit ${asset.name} (${asset.code}) berhasil dikembalikan. Status unit kembali TERSEDIA.`,
         icon: "✅",
       });
 
@@ -198,7 +216,7 @@ export default function LoanQRScreen() {
       setToastConfig({
         visible: true,
         title: "Gagal Update",
-        message: err.message || "Gagal memperbarui status unit HT.",
+        message: err.message || "Gagal memperbarui status pengembalian HT.",
         icon: "❌",
         isDanger: true,
       });
@@ -261,7 +279,7 @@ export default function LoanQRScreen() {
           </Text>
 
           <AnimatedPressable
-            onPress={() => router.back()}
+            onPress={handleGoBack}
             style={{
               backgroundColor: theme.primary,
               paddingVertical: 12,
@@ -308,7 +326,7 @@ export default function LoanQRScreen() {
         >
           <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
             <AnimatedPressable
-              onPress={() => router.back()}
+              onPress={handleGoBack}
               style={{
                 width: 40,
                 height: 40,

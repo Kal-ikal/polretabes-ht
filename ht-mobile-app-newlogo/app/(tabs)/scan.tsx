@@ -9,6 +9,7 @@ import {
   Platform,
   Modal,
   TextInput,
+  Alert,
 } from "react-native";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -51,14 +52,130 @@ const KESATUAN_OPTIONS = [
   "Polsek",
 ];
 
+interface ListItemProps {
+  item: Asset;
+  isBatchMode: boolean;
+  isSelectedInBatch: boolean;
+  onPress: () => void;
+}
+
+const ListItem = ({ item, isBatchMode, isSelectedInBatch, onPress }: ListItemProps) => {
+  const { colors, isDark } = useTheme();
+  const statusNorm = (item.status || "").toLowerCase();
+  const isAvailable = statusNorm === "tersedia";
+
+  return (
+    <AnimatedPressable
+      onPress={onPress}
+      style={{
+        backgroundColor: isSelectedInBatch
+          ? (isDark ? "rgba(2, 132, 199, 0.22)" : "#E0F2FE")
+          : colors.cardBackground,
+        borderColor: isSelectedInBatch
+          ? colors.primary
+          : colors.cardBorder,
+        borderWidth: isSelectedInBatch ? 2 : 1,
+        borderRadius: 18,
+        padding: 14,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        shadowColor: colors.shadowColor,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 6,
+        elevation: 2,
+      }}
+    >
+      {/* Multi-select Checkbox in Batch Mode */}
+      {isBatchMode && (
+        <View
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 6,
+            borderWidth: 2,
+            borderColor: isSelectedInBatch ? colors.primary : colors.textMuted,
+            backgroundColor: isSelectedInBatch ? colors.primary : "transparent",
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          {isSelectedInBatch && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
+        </View>
+      )}
+
+      {/* Icon */}
+      <View
+        style={{
+          width: 42,
+          height: 42,
+          borderRadius: 14,
+          backgroundColor: isAvailable
+            ? (isDark ? "rgba(34, 197, 94, 0.2)" : "#DCFCE7")
+            : (isDark ? "rgba(239, 68, 68, 0.2)" : "#FEE2E2"),
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
+        <Ionicons
+          name="radio"
+          size={20}
+          color={isAvailable ? "#22C55E" : "#EF4444"}
+        />
+      </View>
+
+      {/* Details */}
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text numberOfLines={1} style={{ color: colors.textPrimary, fontWeight: "700", fontSize: 15 }}>
+          {item.name}
+        </Text>
+        <Text numberOfLines={1} style={{ color: colors.textSecondary, fontSize: 12 }}>
+          Kode: {item.code} • SN: {item.serial_number}
+        </Text>
+        <View style={{ marginTop: 2 }}>
+          <StatusBadge status={item.status} />
+        </View>
+      </View>
+
+      {/* Action Pill */}
+      <View
+        style={{
+          backgroundColor: isSelectedInBatch
+            ? colors.primary
+            : isAvailable
+            ? (isDark ? "rgba(2, 132, 199, 0.2)" : "rgba(2, 132, 199, 0.1)")
+            : "transparent",
+          paddingHorizontal: 10,
+          paddingVertical: 6,
+          borderRadius: 10,
+        }}
+      >
+        <Text
+          style={{
+            color: isSelectedInBatch ? "#FFFFFF" : isAvailable ? colors.primary : colors.textMuted,
+            fontWeight: "700",
+            fontSize: 11.5,
+          }}
+        >
+          {isSelectedInBatch ? "Terpilih" : isAvailable ? (isBatchMode ? "+ Pilih" : "Pilih") : "Tidak Siap"}
+        </Text>
+      </View>
+    </AnimatedPressable>
+  );
+};
+
 export default function ScanScreen() {
-  // Read target parameters passed from 'Siap Scan' / 'Scan Fisik' cards
+  // Read target parameters passed from 'Siap Scan' / 'Scan Fisik' cards or direct link
   const params = useLocalSearchParams<{
     target_asset_id?: string;
     target_batch_id?: string;
     expected_code?: string;
     expected_name?: string;
     batch_code?: string;
+    txId?: string;
+    id?: string;
+    tx_id?: string;
   }>();
 
   const [targetAssetId, setTargetAssetId] = useState<string | null>(params.target_asset_id || null);
@@ -252,6 +369,56 @@ export default function ScanScreen() {
     setLoading(true);
     setErrorMsg(null);
 
+    // ====================================================================
+    // MODE 1: Serah Terima / Ambil Barang (Jika ADA ID Transaksi)
+    // ====================================================================
+    const currentTxId = params.txId || params.id || params.tx_id;
+    if (currentTxId) {
+      try {
+        const { error } = await supabase.rpc("scan_to_borrow", {
+          p_tx_id: currentTxId,
+          p_scanned_qr: scannedData,
+          p_user_id: profile?.id || null,
+        });
+
+        setLoading(false);
+
+        if (error) {
+          Alert.alert("Gagal", error.message || getFriendlyErrorMessage(error));
+          setTimeout(() => {
+            setScanned(false);
+            isProcessingRef.current = false;
+          }, 2000);
+          return;
+        }
+
+        if (Platform.OS !== "web") {
+          try {
+            await SafeHaptics.notificationAsync();
+          } catch {}
+        }
+
+        Alert.alert("Sukses", "Aset berhasil diserahterimakan", [
+          {
+            text: "OK",
+            onPress: () => router.replace("/history"),
+          },
+        ]);
+        router.replace("/history");
+      } catch (err: any) {
+        setLoading(false);
+        Alert.alert("Gagal", err.message || "Gagal memproses serah terima.");
+        setTimeout(() => {
+          setScanned(false);
+          isProcessingRef.current = false;
+        }, 2000);
+      }
+      return;
+    }
+
+    // ====================================================================
+    // MODE 2: Pengajuan Baru (Jika TIDAK ADA ID Transaksi)
+    // ====================================================================
     try {
       // 1. Try exact code match
       let { data: asset } = await supabase
@@ -291,12 +458,8 @@ export default function ScanScreen() {
         return;
       }
 
-      // ====================================================================
-      // STRICT VERIFICATION: Target Asset / Batch Verification OR Active Approved Borrow
-      // ====================================================================
-      // 1. Explicit target from navigation params
+      // Strict checks for target params if present
       if (targetAssetId && asset.id !== targetAssetId) {
-        setLoading(false);
         setToastConfig({
           visible: true,
           title: "QR Code Salah / Beda Unit HT! ❌",
@@ -321,7 +484,6 @@ export default function ScanScreen() {
           .maybeSingle();
 
         if (!inBatch) {
-          setLoading(false);
           setToastConfig({
             visible: true,
             title: "Unit Bukan Bagian Paket! ❌",
@@ -337,93 +499,16 @@ export default function ScanScreen() {
         }
       }
 
-      // 2. Implicit Check for Petugas: Check if current user has ANY active APPROVED borrow waiting for physical pickup
-      if (!isAdmin && profile?.id) {
-        const { data: myApprovedLoans } = await supabase
-          .from("transactions")
-          .select("id, asset_id, batch_id, batch_code, assets:asset_id(id, name, code, status)")
-          .or(`borrower_id.eq.${profile.id},user_id.eq.${profile.id}${profile.nrp ? `,borrower_nrp.eq.${profile.nrp}` : ''}`)
-          .eq("action", "BORROW")
-          .eq("status", "APPROVED")
-          .is("cancelled_at", null)
-          .order("created_at", { ascending: false });
-
-        if (myApprovedLoans && myApprovedLoans.length > 0) {
-          // Filter loans where the asset is NOT yet marked 'dipinjam'
-          const waitingLoans = myApprovedLoans.filter(
-            (tx: any) => (tx.assets?.status || "").toLowerCase() !== "dipinjam"
-          );
-
-          if (waitingLoans.length > 0) {
-            const isMatchingApprovedAsset = waitingLoans.some((tx: any) => tx.asset_id === asset.id);
-
-            if (!isMatchingApprovedAsset) {
-              const expectedNames = waitingLoans
-                .map((tx: any) => `• ${tx.assets?.name || 'Unit HT'} (${tx.assets?.code || ''})`)
-                .join("\n");
-
-              setLoading(false);
-              setToastConfig({
-                visible: true,
-                title: "QR Code Salah / Beda Unit HT! ❌",
-                message: `Unit yang Anda scan adalah "${asset.name}" (${asset.code}).\n\nPermohonan Anda yang telah DISETUJUI admin adalah:\n${expectedNames}\n\nHarap scan fisik unit HT yang sesuai dengan permohonan yang disetujui!`,
-                icon: "⚠️",
-                isDanger: true,
-              });
-              setTimeout(() => {
-                setScanned(false);
-                isProcessingRef.current = false;
-              }, 4000);
-              return;
-            }
-          }
-        }
-      }
-
       if (Platform.OS !== "web") {
         try {
           await SafeHaptics.notificationAsync();
         } catch {}
       }
 
-      // ====================================================================
-      // TRANSACTION LOOKUP: Check the single latest transaction for this asset
-      // ====================================================================
-      const { data: latestTx } = await supabase
-        .from("transactions")
-        .select("*")
-        .eq("asset_id", asset.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
       const isAssetDipinjam = (asset.status || "").toLowerCase() === "dipinjam";
       const isAssetRusak = (asset.status || "").toLowerCase() === "rusak";
-      const isAssetTersedia = !isAssetDipinjam && !isAssetRusak;
 
-      // An approved borrow awaiting physical pickup exists ONLY IF:
-      // 1. Asset status is 'tersedia'
-      // 2. The absolute latest transaction is BORROW with status APPROVED (not cancelled)
-      const isApprovedAwaitingPickup =
-        isAssetTersedia &&
-        latestTx &&
-        latestTx.action === "BORROW" &&
-        latestTx.status === "APPROVED" &&
-        !latestTx.cancelled_at;
-
-      // A pending borrow waiting for admin approval exists ONLY IF:
-      // 1. Asset status is 'tersedia'
-      // 2. The absolute latest transaction is BORROW with status PENDING (not cancelled)
-      const isPendingAdminApproval =
-        isAssetTersedia &&
-        latestTx &&
-        latestTx.action === "BORROW" &&
-        latestTx.status === "PENDING" &&
-        !latestTx.cancelled_at;
-
-      // ====================================================================
       // Case 1: Asset is currently DIPINJAM -> Route to Return Screen
-      // ====================================================================
       if (isAssetDipinjam) {
         router.push(`/return/${asset.id}`);
         setTimeout(() => {
@@ -433,9 +518,7 @@ export default function ScanScreen() {
         return;
       }
 
-      // ====================================================================
       // Case 2: Asset is RUSAK -> Alert maintenance
-      // ====================================================================
       if (isAssetRusak) {
         setToastConfig({
           visible: true,
@@ -451,95 +534,7 @@ export default function ScanScreen() {
         return;
       }
 
-      // ====================================================================
-      // Case 3: APPROVED BORROW exists -> Physical Handover (Mode Siap Scan Fisik)
-      // ====================================================================
-      if (isApprovedAwaitingPickup && latestTx) {
-        const approvedBorrowTx = latestTx;
-        // Ownership verification for non-admin Petugas
-        if (!isAdmin && profile?.id && approvedBorrowTx.borrower_id && approvedBorrowTx.borrower_id !== profile.id) {
-          setLoading(false);
-          setToastConfig({
-            visible: true,
-            title: "Unit Milik Petugas Lain! ❌",
-            message: `Unit "${asset.name}" (${asset.code}) telah disetujui untuk serah terima kepada ${approvedBorrowTx.borrower_name || "petugas lain"}, bukan untuk akun Anda.`,
-            icon: "⚠️",
-            isDanger: true,
-          });
-          setTimeout(() => {
-            setScanned(false);
-            isProcessingRef.current = false;
-          }, 3000);
-          return;
-        }
-
-        const borrowerName = approvedBorrowTx.borrower_name || "Petugas";
-
-        // Call confirm_physical_handover RPC (SECURITY DEFINER, works for both Petugas and Admin)
-        const { error: handoverErr } = await supabase.rpc("confirm_physical_handover", {
-          p_asset_id: asset.id,
-        });
-
-        if (handoverErr) {
-          // Direct table update fallback
-          await supabase
-            .from("assets")
-            .update({ status: "dipinjam", updated_at: new Date().toISOString() })
-            .eq("id", asset.id);
-        }
-
-        // Clean up any stale PENDING BORROW transactions for this asset
-        await supabase
-          .from("transactions")
-          .delete()
-          .eq("asset_id", asset.id)
-          .eq("action", "BORROW")
-          .eq("status", "PENDING");
-
-        // Clear target state on successful handover
-        if (targetAssetId === asset.id) {
-          setTargetAssetId(null);
-          setExpectedCode("");
-          setExpectedName("");
-        }
-
-        setToastConfig({
-          visible: true,
-          title: "Serah Terima Fisik Berhasil! 🎉",
-          message: `Pemindaian fisik unit ${asset.name} (${asset.code}) terkonfirmasi! Unit resmi diserahkan kepada ${borrowerName}. Status unit aktif DIPINJAM.`,
-          icon: "✅",
-        });
-
-        fetchAssetsCatalog();
-
-        setTimeout(() => {
-          setScanned(false);
-          isProcessingRef.current = false;
-        }, 2200);
-        return;
-      }
-
-      // ====================================================================
-      // Case 4: Borrow request is PENDING admin approval
-      // ====================================================================
-      if (isPendingAdminApproval && latestTx) {
-        const borrowerName = latestTx.borrower_name || "Petugas";
-        setToastConfig({
-          visible: true,
-          title: "Menunggu Persetujuan Admin ⏳",
-          message: `Pengajuan peminjaman unit ${asset.name} (${asset.code}) oleh ${borrowerName} masih PENDING. Minta Admin menyetujui di Admin Panel terlebih dahulu sebelum memindai fisik barang.`,
-          icon: "⏳",
-        });
-        setTimeout(() => {
-          setScanned(false);
-          isProcessingRef.current = false;
-        }, 2500);
-        return;
-      }
-
-      // ====================================================================
-      // Case 5: No active borrow -> Open Borrow Request Form (or select batch)
-      // ====================================================================
+      // Case 3: Batch Mode vs Single Borrow Request Form
       if (isBatchMode) {
         toggleSelectBatchAsset(asset as Asset);
         setErrorMsg(`Dipilih: ${asset.name} (${batchSelectedAssets.length + 1}/50)`);
@@ -551,7 +546,6 @@ export default function ScanScreen() {
         setScanned(false);
         isProcessingRef.current = false;
       }, 1500);
-
     } catch (err: any) {
       setLoading(false);
       setErrorMsg(getFriendlyErrorMessage(err, "Gagal memindai QR code."));
@@ -565,6 +559,11 @@ export default function ScanScreen() {
   // Handle Batch Loan Submit
   async function executeBatchSubmit() {
     if (batchSelectedAssets.length === 0) return;
+
+    if (batchSelectedAssets.length < 2) {
+      Alert.alert("Gagal", "Peminjaman Batch minimal 2 unit. Untuk 1 unit, gunakan peminjaman reguler.");
+      return;
+    }
 
     if (!borrowerName.trim() || !borrowerNrp.trim() || !kesatuan.trim()) {
       setToastConfig({
@@ -1151,117 +1150,20 @@ export default function ScanScreen() {
             initialNumToRender={8}
             windowSize={4}
             contentContainerStyle={{ paddingBottom: batchSelectedAssets.length > 0 ? 100 : 32, gap: 10 }}
-            renderItem={({ item }) => {
-              const statusNorm = (item.status || "").toLowerCase();
-              const isAvailable = statusNorm === "tersedia";
-              const isSelectedInBatch = batchSelectedAssets.some((b) => b.id === item.id);
-
-              return (
-                <AnimatedPressable
-                  onPress={() => {
-                    if (isBatchMode) {
-                      toggleSelectBatchAsset(item);
-                    } else {
-                      handleBarcodeScanned({ data: item.code });
-                    }
-                  }}
-                  style={{
-                    backgroundColor: isSelectedInBatch
-                      ? (isDark ? "rgba(2, 132, 199, 0.22)" : "#E0F2FE")
-                      : theme.cardBackground,
-                    borderColor: isSelectedInBatch
-                      ? theme.primary
-                      : theme.cardBorder,
-                    borderWidth: isSelectedInBatch ? 2 : 1,
-                    borderRadius: 18,
-                    padding: 14,
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 12,
-                    shadowColor: theme.shadowColor,
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.08,
-                    shadowRadius: 6,
-                    elevation: 2,
-                  }}
-                >
-                  {/* Multi-select Checkbox in Batch Mode */}
-                  {isBatchMode && (
-                    <View
-                      style={{
-                        width: 22,
-                        height: 22,
-                        borderRadius: 6,
-                        borderWidth: 2,
-                        borderColor: isSelectedInBatch ? theme.primary : theme.textMuted,
-                        backgroundColor: isSelectedInBatch ? theme.primary : "transparent",
-                        justifyContent: "center",
-                        alignItems: "center",
-                      }}
-                    >
-                      {isSelectedInBatch && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
-                    </View>
-                  )}
-
-                  {/* Icon */}
-                  <View
-                    style={{
-                      width: 42,
-                      height: 42,
-                      borderRadius: 14,
-                      backgroundColor: isAvailable
-                        ? (theme.isDark ? "rgba(34, 197, 94, 0.2)" : "#DCFCE7")
-                        : (theme.isDark ? "rgba(239, 68, 68, 0.2)" : "#FEE2E2"),
-                      justifyContent: "center",
-                      alignItems: "center",
-                    }}
-                  >
-                    <Ionicons
-                      name="radio"
-                      size={20}
-                      color={isAvailable ? "#22C55E" : "#EF4444"}
-                    />
-                  </View>
-
-                  {/* Details */}
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Text numberOfLines={1} style={{ color: theme.textPrimary, fontWeight: "700", fontSize: 15 }}>
-                      {item.name}
-                    </Text>
-                    <Text numberOfLines={1} style={{ color: theme.textSecondary, fontSize: 12 }}>
-                      Kode: {item.code} • SN: {item.serial_number}
-                    </Text>
-                    <View style={{ marginTop: 2 }}>
-                      <StatusBadge status={item.status} />
-                    </View>
-                  </View>
-
-                  {/* Action Pill */}
-                  <View
-                    style={{
-                      backgroundColor: isSelectedInBatch
-                        ? theme.primary
-                        : isAvailable
-                        ? (isDark ? "rgba(2, 132, 199, 0.2)" : "rgba(2, 132, 199, 0.1)")
-                        : "transparent",
-                      paddingHorizontal: 10,
-                      paddingVertical: 6,
-                      borderRadius: 10,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        color: isSelectedInBatch ? "#FFFFFF" : isAvailable ? theme.primary : theme.textMuted,
-                        fontWeight: "700",
-                        fontSize: 11.5,
-                      }}
-                    >
-                      {isSelectedInBatch ? "Terpilih" : isAvailable ? (isBatchMode ? "+ Pilih" : "Pilih") : "Tidak Siap"}
-                    </Text>
-                  </View>
-                </AnimatedPressable>
-              );
-            }}
+            renderItem={({ item }) => (
+              <ListItem
+                item={item}
+                isBatchMode={isBatchMode}
+                isSelectedInBatch={batchSelectedAssets.some((b) => b.id === item.id)}
+                onPress={() => {
+                  if (isBatchMode) {
+                    toggleSelectBatchAsset(item);
+                  } else {
+                    handleBarcodeScanned({ data: item.code });
+                  }
+                }}
+              />
+            )}
           />
         </View>
       </View>
@@ -1315,7 +1217,13 @@ export default function ScanScreen() {
           </View>
 
           <AnimatedPressable
-            onPress={() => setBatchModalVisible(true)}
+            onPress={() => {
+              if (batchSelectedAssets.length < 2) {
+                Alert.alert("Gagal", "Peminjaman Batch minimal 2 unit. Untuk 1 unit, gunakan peminjaman reguler.");
+                return;
+              }
+              setBatchModalVisible(true);
+            }}
             style={{
               backgroundColor: theme.primary,
               paddingVertical: 11,

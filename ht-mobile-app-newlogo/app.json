@@ -32,7 +32,8 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.VIBRATE"
+        "android.permission.VIBRATE",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -59,7 +60,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "c078d72b-e649-4742-b09c-35bade1584a4"
+        "projectId": "f0454035-7e4b-4eff-86a3-534496f71905"
       }
     }
   }

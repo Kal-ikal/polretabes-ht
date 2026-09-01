@@ -8,6 +8,7 @@ import {
   Modal,
   ActivityIndicator,
   Platform,
+  Alert,
 } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -325,51 +326,20 @@ export default function HomeScreen() {
           p_batch_id: cleanBatchId,
         });
         error = res.error;
-
-        const { data: batchTxs } = await supabase
-          .from("transactions")
-          .select("asset_id, action, condition")
-          .eq("batch_id", cleanBatchId);
-
-        if (batchTxs && batchTxs.length > 0) {
-          const isBorrow = confirmApproveTx.action === "BORROW";
-          const assetIds = batchTxs.map((t) => t.asset_id);
-          await supabase
-            .from("transactions")
-            .update({ status: "APPROVED", reviewed_at: new Date().toISOString() })
-            .eq("batch_id", cleanBatchId);
-          await supabase
-            .from("assets")
-            .update({ status: isBorrow ? "tersedia" : "tersedia", updated_at: new Date().toISOString() })
-            .in("id", assetIds);
-        }
       } else {
-        const res = await supabase.rpc("approve_transaction", {
-          p_transaction_id: confirmApproveTx.id,
+        const res = await supabase.rpc("approve_borrow_request", {
+          p_tx_id: confirmApproveTx.id,
+          p_admin_id: profile?.id || null,
         });
         error = res.error;
-
-        const isBorrow = confirmApproveTx.action === "BORROW";
-        const isDamaged = (confirmApproveTx.condition || "").toLowerCase() === "rusak";
-        const targetStatus = isBorrow ? "tersedia" : isDamaged ? "rusak" : "tersedia";
-
-        await supabase
-          .from("transactions")
-          .update({ status: "APPROVED", reviewed_at: new Date().toISOString() })
-          .eq("id", confirmApproveTx.id);
-        await supabase
-          .from("assets")
-          .update({ status: targetStatus, updated_at: new Date().toISOString() })
-          .eq("id", confirmApproveTx.asset_id);
       }
 
-      setActionProcessing(false);
-
       if (error) {
+        Alert.alert("Gagal Menyetujui", error.message || getFriendlyErrorMessage(error));
         setToastConfig({
           visible: true,
           title: "Gagal Menyetujui",
-          message: getFriendlyErrorMessage(error),
+          message: error.message || getFriendlyErrorMessage(error),
           icon: "❌",
           isDanger: true,
         });
@@ -391,14 +361,9 @@ export default function HomeScreen() {
         loadData(false);
       }
     } catch (err: any) {
+      Alert.alert("Kesalahan Sistem", err.message || "Gagal memproses persetujuan.");
+    } finally {
       setActionProcessing(false);
-      setToastConfig({
-        visible: true,
-        title: "Kesalahan Sistem",
-        message: getFriendlyErrorMessage(err),
-        icon: "❌",
-        isDanger: true,
-      });
     }
   };
 

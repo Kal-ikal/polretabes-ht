@@ -146,16 +146,23 @@ export default function AssetDetailScreen() {
     if (!asset || !id) return;
     setSubmitting(true);
     try {
-      const { error } = await supabase.rpc("confirm_physical_handover", {
-        p_asset_id: id,
+      const { error } = await supabase.rpc("scan_to_borrow", {
+        p_scanned_qr: asset.code,
+        p_tx_id: approvedAwaitingTx?.id || null,
+        p_user_id: profile?.id || null,
       });
 
       if (error) {
-        // Direct table update fallback
-        await supabase
-          .from("assets")
-          .update({ status: "dipinjam", updated_at: new Date().toISOString() })
-          .eq("id", id);
+        setSubmitting(false);
+        setModalConfig({
+          visible: true,
+          title: "Gagal Serah Terima",
+          message: error.message || getFriendlyErrorMessage(error),
+          icon: "❌",
+          isDanger: true,
+          onConfirm: () => {},
+        });
+        return;
       }
 
       setSubmitting(false);
@@ -177,7 +184,7 @@ export default function AssetDetailScreen() {
       setModalConfig({
         visible: true,
         title: "Gagal Serah Terima",
-        message: getFriendlyErrorMessage(err),
+        message: err.message || getFriendlyErrorMessage(err),
         icon: "❌",
         isDanger: true,
         onConfirm: () => {},
@@ -194,14 +201,16 @@ export default function AssetDetailScreen() {
       });
 
       if (error) {
-        await supabase
-          .from("transactions")
-          .delete()
-          .eq("id", approvedAwaitingTx.id);
-        await supabase
-          .from("assets")
-          .update({ status: "tersedia", updated_at: new Date().toISOString() })
-          .eq("id", id!);
+        setSubmitting(false);
+        setModalConfig({
+          visible: true,
+          title: "Gagal Membatalkan",
+          message: error.message || getFriendlyErrorMessage(error),
+          icon: "❌",
+          isDanger: true,
+          onConfirm: () => {},
+        });
+        return;
       }
 
       setSubmitting(false);
@@ -223,7 +232,7 @@ export default function AssetDetailScreen() {
       setModalConfig({
         visible: true,
         title: "Gagal Membatalkan",
-        message: getFriendlyErrorMessage(err),
+        message: err.message || getFriendlyErrorMessage(err),
         icon: "❌",
         isDanger: true,
         onConfirm: () => {},

@@ -1,6 +1,6 @@
 {
   "cli": {
-    "version": ">= 15.0.0",
+    "version": ">= 23.2.0",
     "appVersionSource": "remote"
   },
   "build": {
@@ -9,25 +9,10 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal",
-      "env": {
-        "EAS_SKIP_AUTO_FINGERPRINT": "1"
-      },
-      "android": {
-        "buildType": "apk"
-      },
-      "ios": {
-        "simulator": false
-      }
+      "distribution": "internal"
     },
     "production": {
-      "autoIncrement": true,
-      "env": {
-        "EAS_SKIP_AUTO_FINGERPRINT": "1"
-      },
-      "android": {
-        "buildType": "app-bundle"
-      }
+      "autoIncrement": true
     }
   },
   "submit": {

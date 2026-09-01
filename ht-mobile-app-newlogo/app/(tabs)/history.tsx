@@ -18,6 +18,7 @@ import Animated, { ZoomIn, ZoomOut } from "react-native-reanimated";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/context/ThemeContext";
+import { useTheme } from "@/hooks/useTheme";
 import { SkeletonCard } from "@/components/SkeletonCard";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -46,6 +47,315 @@ interface GroupedTransaction {
   items: Transaction[];
   mainTx: Transaction;
 }
+
+interface HistoryListItemProps {
+  group: GroupedTransaction;
+  isAdmin: boolean;
+  onPress: () => void;
+  onOpenQR: () => void;
+}
+
+const HistoryListItem = ({ group, isAdmin, onPress, onOpenQR }: HistoryListItemProps) => {
+  const { colors, isDark } = useTheme();
+  const item = group.mainTx;
+  const isBorrow = item.action === "BORROW";
+
+  const getBadge = (status: string | null | undefined) => {
+    const norm = (status || "").toUpperCase();
+    switch (norm) {
+      case "APPROVED":
+        return {
+          label: "Disetujui / Selesai",
+          bg: isDark ? "rgba(34, 197, 94, 0.16)" : "#DCFCE7",
+          text: isDark ? "#4ADE80" : "#15803D",
+          border: isDark ? "rgba(74, 222, 128, 0.3)" : "#86EFAC",
+          icon: "checkmark-circle",
+        };
+      case "REJECTED":
+        return {
+          label: "Ditolak",
+          bg: isDark ? "rgba(239, 68, 68, 0.16)" : "#FEE2E2",
+          text: isDark ? "#F87171" : "#B91C1C",
+          border: isDark ? "rgba(248, 113, 113, 0.3)" : "#FCA5A5",
+          icon: "close-circle",
+        };
+      case "PENDING":
+      default:
+        return {
+          label: norm === "PENDING" ? "Menunggu Verifikasi" : (status || "Menunggu"),
+          bg: isDark ? "rgba(245, 158, 11, 0.16)" : "#FEF3C7",
+          text: isDark ? "#FBBF24" : "#D97706",
+          border: isDark ? "rgba(245, 158, 11, 0.3)" : "#FCD34D",
+          icon: "time",
+        };
+    }
+  };
+
+  const badge = getBadge(item.status);
+
+  return (
+    <AnimatedPressable
+      onPress={onPress}
+      style={{
+        backgroundColor: colors.cardBackground,
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: group.isBatch ? colors.primary : colors.cardBorder,
+        marginBottom: 10,
+        overflow: "hidden",
+        shadowColor: colors.shadowColor,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: isDark ? 0.2 : 0.06,
+        shadowRadius: 8,
+        elevation: 2,
+      }}
+    >
+      {/* Top Header Row */}
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+          paddingHorizontal: 16,
+          paddingTop: 12,
+          paddingBottom: 10,
+        }}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <View
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: 9,
+              backgroundColor: group.isBatch
+                ? (isDark ? "rgba(2, 132, 199, 0.3)" : "rgba(2, 132, 199, 0.15)")
+                : isBorrow
+                ? (isDark ? "rgba(2, 132, 199, 0.2)" : "rgba(2, 132, 199, 0.12)")
+                : (isDark ? "rgba(34, 197, 94, 0.2)" : "rgba(34, 197, 94, 0.12)"),
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            <Ionicons
+              name={group.isBatch ? "layers" : isBorrow ? "arrow-up" : "arrow-down"}
+              size={16}
+              color={isBorrow ? colors.primary : "#22C55E"}
+            />
+          </View>
+
+          <View>
+            <Text style={{ fontSize: 11, fontWeight: "800", color: isBorrow ? colors.primary : "#22C55E", textTransform: "uppercase" }}>
+              {group.isBatch ? `Peminjaman Batch (${group.items.length} HT)` : isBorrow ? "Peminjaman HT" : "Pengembalian HT"}
+            </Text>
+            <Text style={{ fontSize: 10, color: colors.textMuted }}>
+              {new Date(item.created_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} WIB
+            </Text>
+          </View>
+        </View>
+
+        {/* Status Badge */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 4,
+            backgroundColor: badge.bg,
+            borderColor: badge.border,
+            borderWidth: 1,
+            paddingHorizontal: 8,
+            paddingVertical: 3.5,
+            borderRadius: 12,
+          }}
+        >
+          <Ionicons name={badge.icon as any} size={11} color={badge.text} />
+          <Text style={{ fontSize: 10.5, fontWeight: "800", color: badge.text }}>
+            {badge.label}
+          </Text>
+        </View>
+      </View>
+
+      <View style={{ height: 1, backgroundColor: colors.cardBorder, marginHorizontal: 16 }} />
+
+      {/* Main Body Info */}
+      <View style={{ paddingHorizontal: 16, paddingVertical: 11 }}>
+        {group.isBatch ? (
+          <View style={{ gap: 6 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <Text style={{ fontSize: 15, fontWeight: "800", color: colors.textPrimary }}>
+                {group.items.length} Unit Handy Talky
+              </Text>
+              <View style={{ backgroundColor: isDark ? "rgba(56, 189, 248, 0.18)" : "rgba(2, 132, 199, 0.1)", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
+                <Text style={{ fontSize: 11, fontWeight: "800", color: colors.primary }}>
+                  {group.batch_code}
+                </Text>
+              </View>
+            </View>
+
+            {/* List of HTs snippet */}
+            <View style={{ gap: 3, marginTop: 2 }}>
+              {group.items.slice(0, 3).map((it, idx) => (
+                <Text key={`${it.id}-${idx}`} numberOfLines={1} style={{ fontSize: 11.5, color: colors.textSecondary }}>
+                  • {it.asset?.name || "HT"} (Kode: {it.asset?.code || "-"} | SN: {it.asset?.serial_number || "-"})
+                </Text>
+              ))}
+              {group.items.length > 3 && (
+                <Text style={{ fontSize: 11, color: colors.primary, fontWeight: "700" }}>
+                  + {group.items.length - 3} unit HT lainnya...
+                </Text>
+              )}
+            </View>
+          </View>
+        ) : (
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text numberOfLines={1} style={{ fontSize: 15, fontWeight: "800", color: colors.textPrimary }}>
+                {item.asset?.name || "Unit HT"}
+              </Text>
+              <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>
+                SN: {item.asset?.serial_number || "-"} • Kode: {item.asset?.code || "-"}
+              </Text>
+            </View>
+
+            <View style={{ backgroundColor: isDark ? "rgba(255, 255, 255, 0.08)" : "#F1F5F9", paddingHorizontal: 8, paddingVertical: 2.5, borderRadius: 7 }}>
+              <Text style={{ fontSize: 11, fontWeight: "800", color: colors.primary }}>
+                {item.asset?.code || "HT"}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Borrower Info Box */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 10,
+            backgroundColor: isDark ? "rgba(255, 255, 255, 0.03)" : "#F8FAFC",
+            borderRadius: 10,
+            padding: 9,
+            marginTop: 9,
+            borderWidth: 1,
+            borderColor: isDark ? "rgba(255, 255, 255, 0.06)" : "#E2E8F0",
+          }}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 10, color: colors.textMuted, fontWeight: "600" }}>
+              Petugas Peminjam
+            </Text>
+            <Text numberOfLines={1} style={{ fontSize: 12.5, fontWeight: "700", color: colors.textPrimary, marginTop: 1 }}>
+              {item.borrower_name || "Anggota Petugas"}
+            </Text>
+          </View>
+
+          <View style={{ width: 1, height: 22, backgroundColor: colors.cardBorder }} />
+
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 10, color: colors.textMuted, fontWeight: "600" }}>
+              Kesatuan / NRP
+            </Text>
+            <Text numberOfLines={1} style={{ fontSize: 12.5, fontWeight: "700", color: colors.textPrimary, marginTop: 1 }}>
+              {item.kesatuan || item.borrower_nrp || "-"}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Card Footer Bar */}
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+          backgroundColor: isDark ? "rgba(0, 0, 0, 0.15)" : "#F8FAFC",
+          paddingHorizontal: 16,
+          paddingVertical: 9,
+          borderTopWidth: 1,
+          borderTopColor: colors.cardBorder,
+        }}
+      >
+        <Text style={{ fontSize: 11, color: colors.textMuted }}>
+          Ref: {group.isBatch ? group.batch_code : `HT-${item.id.slice(0, 8).toUpperCase()}`}
+        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          {isAdmin && ((item.status as string) === "APPROVED" || (item.status as string) === "RETURN_APPROVED" || item.asset?.status === "dipinjam") && (
+            <AnimatedPressable
+              onPress={(e) => {
+                e.stopPropagation();
+                onOpenQR();
+              }}
+              style={{
+                backgroundColor: "#22C55E",
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                borderRadius: 8,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              <Ionicons name="qr-code" size={13} color="#FFFFFF" />
+              <Text style={{ fontSize: 11, fontWeight: "800", color: "#FFFFFF" }}>
+                📷 QR Code & Serah Terima
+              </Text>
+            </AnimatedPressable>
+          )}
+
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+            <Text style={{ fontSize: 11.5, fontWeight: "700", color: colors.primary }}>
+              Lihat Rincian Bukti
+            </Text>
+            <Ionicons name="chevron-forward" size={12} color={colors.primary} />
+          </View>
+        </View>
+      </View>
+    </AnimatedPressable>
+  );
+};
+
+interface FsmLogListItemProps {
+  item: AssetStateLog;
+}
+
+const FsmLogListItem = ({ item }: FsmLogListItemProps) => {
+  const { colors } = useTheme();
+
+  return (
+    <View
+      style={{
+        backgroundColor: colors.cardBackground,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: colors.cardBorder,
+        padding: 14,
+        marginBottom: 10,
+      }}
+    >
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <Text style={{ fontSize: 14, fontWeight: "800", color: colors.textPrimary }}>
+          {item.asset?.name || "Unit HT"} ({item.asset?.code || "-"})
+        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+          <Text style={{ fontSize: 11, color: colors.textMuted, textTransform: "uppercase" }}>
+            {item.from_state || "START"}
+          </Text>
+          <Ionicons name="arrow-forward" size={12} color={colors.primary} />
+          <Text style={{ fontSize: 11, fontWeight: "800", color: colors.primary, textTransform: "uppercase" }}>
+            {item.to_state}
+          </Text>
+        </View>
+      </View>
+
+      {item.reason && (
+        <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 4 }}>
+          Alasan: {item.reason}
+        </Text>
+      )}
+      <Text style={{ fontSize: 11, color: colors.textMuted }}>
+        Waktu: {new Date(item.created_at).toLocaleString("id-ID")} WIB
+      </Text>
+    </View>
+  );
+};
 
 export default function HistoryScreen() {
   const { profile } = useAuth();
@@ -318,16 +628,9 @@ _Dokumentasi Resmi Sistem Logistik HT Polrestabes_`;
     }
   };
 
-  const getStatusBadgeConfig = (status: TransactionStatus) => {
-    switch (status) {
-      case "PENDING":
-        return {
-          label: "Menunggu Verifikasi",
-          bg: isDark ? "rgba(245, 158, 11, 0.16)" : "#FEF3C7",
-          text: isDark ? "#FBBF24" : "#D97706",
-          border: isDark ? "rgba(245, 158, 11, 0.3)" : "#FCD34D",
-          icon: "time",
-        };
+  const getStatusBadgeConfig = (status?: string | null) => {
+    const norm = (status || "").toUpperCase();
+    switch (norm) {
       case "APPROVED":
         return {
           label: "Disetujui / Selesai",
@@ -343,6 +646,15 @@ _Dokumentasi Resmi Sistem Logistik HT Polrestabes_`;
           text: isDark ? "#F87171" : "#B91C1C",
           border: isDark ? "rgba(248, 113, 113, 0.3)" : "#FCA5A5",
           icon: "close-circle",
+        };
+      case "PENDING":
+      default:
+        return {
+          label: norm === "PENDING" ? "Menunggu Verifikasi" : (status || "Menunggu"),
+          bg: isDark ? "rgba(245, 158, 11, 0.16)" : "#FEF3C7",
+          text: isDark ? "#FBBF24" : "#D97706",
+          border: isDark ? "rgba(245, 158, 11, 0.3)" : "#FCD34D",
+          icon: "time",
         };
     }
   };
@@ -542,240 +854,19 @@ _Dokumentasi Resmi Sistem Logistik HT Polrestabes_`;
                 </Text>
               </View>
             }
-            renderItem={({ item: group }) => {
-              const item = group.mainTx;
-              const badge = getStatusBadgeConfig(item.status);
-              const isBorrow = item.action === "BORROW";
-
-              return (
-                <AnimatedPressable
-                  onPress={() => {
-                    setSelectedTxGroup(group);
-                    SafeHaptics.selectionAsync();
-                  }}
-                  style={{
-                    backgroundColor: theme.cardBackground,
-                    borderRadius: 18,
-                    borderWidth: 1,
-                    borderColor: group.isBatch ? theme.primary : theme.cardBorder,
-                    marginBottom: 10,
-                    overflow: "hidden",
-                    shadowColor: theme.shadowColor,
-                    shadowOffset: { width: 0, height: 3 },
-                    shadowOpacity: isDark ? 0.2 : 0.06,
-                    shadowRadius: 8,
-                    elevation: 2,
-                  }}
-                >
-                  {/* Top Header Row */}
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      paddingHorizontal: 16,
-                      paddingTop: 12,
-                      paddingBottom: 10,
-                    }}
-                  >
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      <View
-                        style={{
-                          width: 30,
-                          height: 30,
-                          borderRadius: 9,
-                          backgroundColor: group.isBatch
-                            ? (isDark ? "rgba(2, 132, 199, 0.3)" : "rgba(2, 132, 199, 0.15)")
-                            : isBorrow
-                            ? (isDark ? "rgba(2, 132, 199, 0.2)" : "rgba(2, 132, 199, 0.12)")
-                            : (isDark ? "rgba(34, 197, 94, 0.2)" : "rgba(34, 197, 94, 0.12)"),
-                          justifyContent: "center",
-                          alignItems: "center",
-                        }}
-                      >
-                        <Ionicons
-                          name={group.isBatch ? "layers" : isBorrow ? "arrow-up" : "arrow-down"}
-                          size={16}
-                          color={isBorrow ? theme.primary : "#22C55E"}
-                        />
-                      </View>
-
-                      <View>
-                        <Text style={{ fontSize: 11, fontWeight: "800", color: isBorrow ? theme.primary : "#22C55E", textTransform: "uppercase" }}>
-                          {group.isBatch ? `Peminjaman Batch (${group.items.length} HT)` : isBorrow ? "Peminjaman HT" : "Pengembalian HT"}
-                        </Text>
-                        <Text style={{ fontSize: 10, color: theme.textMuted }}>
-                          {new Date(item.created_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} WIB
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Status Badge */}
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 4,
-                        backgroundColor: badge.bg,
-                        borderColor: badge.border,
-                        borderWidth: 1,
-                        paddingHorizontal: 8,
-                        paddingVertical: 3.5,
-                        borderRadius: 12,
-                      }}
-                    >
-                      <Ionicons name={badge.icon as any} size={11} color={badge.text} />
-                      <Text style={{ fontSize: 10.5, fontWeight: "800", color: badge.text }}>
-                        {badge.label}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={{ height: 1, backgroundColor: theme.cardBorder, marginHorizontal: 16 }} />
-
-                  {/* Main Body Info */}
-                  <View style={{ paddingHorizontal: 16, paddingVertical: 11 }}>
-                    {group.isBatch ? (
-                      <View style={{ gap: 6 }}>
-                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                          <Text style={{ fontSize: 15, fontWeight: "800", color: theme.textPrimary }}>
-                            {group.items.length} Unit Handy Talky
-                          </Text>
-                          <View style={{ backgroundColor: theme.isDark ? "rgba(56, 189, 248, 0.18)" : "rgba(2, 132, 199, 0.1)", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
-                            <Text style={{ fontSize: 11, fontWeight: "800", color: theme.primary }}>
-                              {group.batch_code}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {/* List of HTs snippet */}
-                        <View style={{ gap: 3, marginTop: 2 }}>
-                          {group.items.slice(0, 3).map((it, idx) => (
-                            <Text key={`${it.id}-${idx}`} numberOfLines={1} style={{ fontSize: 11.5, color: theme.textSecondary }}>
-                              • {it.asset?.name || "HT"} (Kode: {it.asset?.code || "-"} | SN: {it.asset?.serial_number || "-"})
-                            </Text>
-                          ))}
-                          {group.items.length > 3 && (
-                            <Text style={{ fontSize: 11, color: theme.primary, fontWeight: "700" }}>
-                              + {group.items.length - 3} unit HT lainnya...
-                            </Text>
-                          )}
-                        </View>
-                      </View>
-                    ) : (
-                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-                        <View style={{ flex: 1, marginRight: 8 }}>
-                          <Text numberOfLines={1} style={{ fontSize: 15, fontWeight: "800", color: theme.textPrimary }}>
-                            {item.asset?.name || "Unit HT"}
-                          </Text>
-                          <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 1 }}>
-                            SN: {item.asset?.serial_number || "-"} • Kode: {item.asset?.code || "-"}
-                          </Text>
-                        </View>
-
-                        <View style={{ backgroundColor: isDark ? "rgba(255, 255, 255, 0.08)" : "#F1F5F9", paddingHorizontal: 8, paddingVertical: 2.5, borderRadius: 7 }}>
-                          <Text style={{ fontSize: 11, fontWeight: "800", color: theme.primary }}>
-                            {item.asset?.code || "HT"}
-                          </Text>
-                        </View>
-                      </View>
-                    )}
-
-                    {/* Borrower Info Box */}
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 10,
-                        backgroundColor: isDark ? "rgba(255, 255, 255, 0.03)" : "#F8FAFC",
-                        borderRadius: 10,
-                        padding: 9,
-                        marginTop: 9,
-                        borderWidth: 1,
-                        borderColor: isDark ? "rgba(255, 255, 255, 0.06)" : "#E2E8F0",
-                      }}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 10, color: theme.textMuted, fontWeight: "600" }}>
-                          Petugas Peminjam
-                        </Text>
-                        <Text numberOfLines={1} style={{ fontSize: 12.5, fontWeight: "700", color: theme.textPrimary, marginTop: 1 }}>
-                          {item.borrower_name || "Anggota Petugas"}
-                        </Text>
-                      </View>
-
-                      <View style={{ width: 1, height: 22, backgroundColor: theme.cardBorder }} />
-
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 10, color: theme.textMuted, fontWeight: "600" }}>
-                          Kesatuan / NRP
-                        </Text>
-                        <Text numberOfLines={1} style={{ fontSize: 12.5, fontWeight: "700", color: theme.textPrimary, marginTop: 1 }}>
-                          {item.kesatuan || item.borrower_nrp || "-"}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* Card Footer Bar */}
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      backgroundColor: isDark ? "rgba(0, 0, 0, 0.15)" : "#F8FAFC",
-                      paddingHorizontal: 16,
-                      paddingVertical: 9,
-                      borderTopWidth: 1,
-                      borderTopColor: theme.cardBorder,
-                    }}
-                  >
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                      <Ionicons name="calendar-outline" size={12} color={theme.textMuted} />
-                      <Text style={{ fontSize: 11, color: theme.textMuted, fontWeight: "500" }}>
-                        {new Date(item.created_at).toLocaleDateString("id-ID", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </Text>
-                    </View>
-
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                      {isAdmin && ((item.status as string) === "APPROVED" || (item.status as string) === "RETURN_APPROVED" || item.asset?.status === "dipinjam") && (
-                        <AnimatedPressable
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            router.push(`/loan-qr/${group.batch_id || group.mainTx.id}`);
-                          }}
-                          style={{
-                            backgroundColor: "#22C55E",
-                            paddingHorizontal: 10,
-                            paddingVertical: 5,
-                            borderRadius: 8,
-                            flexDirection: "row",
-                            alignItems: "center",
-                            gap: 4,
-                          }}
-                        >
-                          <Ionicons name="qr-code" size={13} color="#FFFFFF" />
-                          <Text style={{ fontSize: 11, fontWeight: "800", color: "#FFFFFF" }}>
-                            📷 QR Code & Serah Terima
-                          </Text>
-                        </AnimatedPressable>
-                      )}
-
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
-                        <Text style={{ fontSize: 11.5, fontWeight: "700", color: theme.primary }}>
-                          Lihat Rincian Bukti
-                        </Text>
-                        <Ionicons name="chevron-forward" size={12} color={theme.primary} />
-                      </View>
-                    </View>
-                  </View>
-                </AnimatedPressable>
-              );
-            }}
+            renderItem={({ item: group }) => (
+              <HistoryListItem
+                group={group}
+                isAdmin={isAdmin}
+                onPress={() => {
+                  setSelectedTxGroup(group);
+                  SafeHaptics.selectionAsync();
+                }}
+                onOpenQR={() => {
+                  router.push(`/loan-qr/${group.batch_id || group.mainTx.id}`);
+                }}
+              />
+            )}
           />
         ) : (
           /* FSM Logs for Admin */
@@ -788,42 +879,7 @@ _Dokumentasi Resmi Sistem Logistik HT Polrestabes_`;
             removeClippedSubviews={Platform.OS === "android"}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
             contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 50, flexGrow: 1 }}
-            renderItem={({ item }) => (
-              <View
-                style={{
-                  backgroundColor: theme.cardBackground,
-                  borderRadius: 16,
-                  borderWidth: 1,
-                  borderColor: theme.cardBorder,
-                  padding: 14,
-                  marginBottom: 10,
-                }}
-              >
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                  <Text style={{ fontSize: 14, fontWeight: "800", color: theme.textPrimary }}>
-                    {item.asset?.name || "Unit HT"} ({item.asset?.code || "-"})
-                  </Text>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                    <Text style={{ fontSize: 11, color: theme.textMuted, textTransform: "uppercase" }}>
-                      {item.from_state || "START"}
-                    </Text>
-                    <Ionicons name="arrow-forward" size={12} color={theme.primary} />
-                    <Text style={{ fontSize: 11, fontWeight: "800", color: theme.primary, textTransform: "uppercase" }}>
-                      {item.to_state}
-                    </Text>
-                  </View>
-                </View>
-
-                {item.reason && (
-                  <Text style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 4 }}>
-                    Alasan: {item.reason}
-                  </Text>
-                )}
-                <Text style={{ fontSize: 11, color: theme.textMuted }}>
-                  Waktu: {new Date(item.created_at).toLocaleString("id-ID")} WIB
-                </Text>
-              </View>
-            )}
+            renderItem={({ item }) => <FsmLogListItem item={item} />}
           />
         )}
 

@@ -6,7 +6,11 @@ import { useTheme } from "@/hooks/useTheme";
 export function StatusBadge({ status }: { status: string }) {
   const theme = useTheme();
   const normalized = (status || "").toLowerCase() as keyof typeof theme.status;
-  const themeStatus = theme.status[normalized] ?? theme.status.tersedia;
+  const themeStatus = theme?.status?.[normalized] ?? theme?.status?.tersedia ?? {
+    bg: "rgba(34, 197, 94, 0.18)",
+    text: "#4ADE80",
+    border: "rgba(74, 222, 128, 0.35)",
+  };
 
   return (
     <View

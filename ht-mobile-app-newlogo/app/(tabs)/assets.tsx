@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -18,12 +18,122 @@ import { useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/context/ThemeContext";
+import { useTheme } from "@/hooks/useTheme";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SkeletonCard } from "@/components/SkeletonCard";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { AppBottomSheet } from "@/components/AppBottomSheet";
 import { getFriendlyErrorMessage } from "@/lib/errorHandler";
 import type { Asset, AssetStatus } from "@/types/database";
+
+interface AssetListItemProps {
+  item: Asset;
+  onOpenQR: () => void;
+  onOverride: () => void;
+  onEdit: () => void;
+}
+
+const AssetListItem = ({ item, onOpenQR, onOverride, onEdit }: AssetListItemProps) => {
+  const { colors, isDark } = useTheme();
+
+  return (
+    <View
+      style={{
+        backgroundColor: colors.cardBg,
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: colors.cardBorder,
+        padding: 16,
+        marginBottom: 14,
+        shadowColor: colors.shadowColor,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 10,
+        elevation: 2,
+      }}
+    >
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+        <View style={{ flex: 1, marginRight: 10 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
+            <Text style={{ fontSize: 11, fontWeight: "800", color: colors.primary, letterSpacing: 0.5, backgroundColor: isDark ? "rgba(2, 132, 199, 0.2)" : "rgba(2, 132, 199, 0.1)", paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}>
+              {item.code}
+            </Text>
+            <Text style={{ fontSize: 11, color: colors.textMuted }}>
+              SN: {item.serial_number}
+            </Text>
+          </View>
+          <Text style={{ fontSize: 16, fontWeight: "800", color: colors.textPrimary }}>
+            {item.name}
+          </Text>
+        </View>
+
+        <StatusBadge status={item.status} />
+      </View>
+
+      {/* Divider */}
+      <View style={{ height: 1, backgroundColor: colors.cardBorder, marginVertical: 10 }} />
+
+      {/* Actions Footer */}
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <AnimatedPressable
+          onPress={onOpenQR}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            backgroundColor: isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(2, 132, 199, 0.08)",
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            borderRadius: 10,
+            gap: 6,
+          }}
+        >
+          <Ionicons name="qr-code-outline" size={16} color={colors.primary} />
+          <Text style={{ fontSize: 12, fontWeight: "700", color: colors.primary }}>
+            Lihat QR
+          </Text>
+        </AnimatedPressable>
+
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <AnimatedPressable
+            onPress={onOverride}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              backgroundColor: isDark ? "rgba(245, 158, 11, 0.15)" : "rgba(245, 158, 11, 0.1)",
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+              borderRadius: 10,
+              gap: 4,
+            }}
+          >
+            <Ionicons name="swap-horizontal-outline" size={15} color="#F59E0B" />
+            <Text style={{ fontSize: 12, fontWeight: "700", color: "#F59E0B" }}>
+              Override
+            </Text>
+          </AnimatedPressable>
+
+          <AnimatedPressable
+            onPress={onEdit}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              backgroundColor: isDark ? "rgba(255, 255, 255, 0.1)" : "#F1F5F9",
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+              borderRadius: 10,
+              gap: 4,
+            }}
+          >
+            <Ionicons name="create-outline" size={15} color={colors.textPrimary} />
+            <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textPrimary }}>
+              Edit
+            </Text>
+          </AnimatedPressable>
+        </View>
+      </View>
+    </View>
+  );
+};
 
 export default function AdminAssetsScreen() {
   const { profile } = useAuth();
@@ -522,105 +632,16 @@ export default function AdminAssetsScreen() {
               </View>
             }
             renderItem={({ item }) => (
-              <View
-                style={{
-                  backgroundColor: theme.cardBg,
-                  borderRadius: 18,
-                  borderWidth: 1,
-                  borderColor: theme.cardBorder,
-                  padding: 16,
-                  marginBottom: 14,
-                  shadowColor: theme.shadowColor,
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.08,
-                  shadowRadius: 10,
-                  elevation: 2,
+              <AssetListItem
+                item={item}
+                onOpenQR={() => setQrModalAsset(item)}
+                onOverride={() => {
+                  setOverrideAsset(item);
+                  setOverrideStatus(item.status);
+                  setOverrideReason("");
                 }}
-              >
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-                  <View style={{ flex: 1, marginRight: 10 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                      <Text style={{ fontSize: 11, fontWeight: "800", color: theme.primary, letterSpacing: 0.5, backgroundColor: isDark ? "rgba(2, 132, 199, 0.2)" : "rgba(2, 132, 199, 0.1)", paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}>
-                        {item.code}
-                      </Text>
-                      <Text style={{ fontSize: 11, color: theme.textMuted }}>
-                        SN: {item.serial_number}
-                      </Text>
-                    </View>
-                    <Text style={{ fontSize: 16, fontWeight: "800", color: theme.textPrimary }}>
-                      {item.name}
-                    </Text>
-                  </View>
-
-                  <StatusBadge status={item.status} />
-                </View>
-
-                {/* Divider */}
-                <View style={{ height: 1, backgroundColor: theme.cardBorder, marginVertical: 10 }} />
-
-                {/* Actions Footer */}
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                  <AnimatedPressable
-                    onPress={() => setQrModalAsset(item)}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      backgroundColor: isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(2, 132, 199, 0.08)",
-                      paddingHorizontal: 12,
-                      paddingVertical: 8,
-                      borderRadius: 10,
-                      gap: 6,
-                    }}
-                  >
-                    <Ionicons name="qr-code-outline" size={16} color={theme.primary} />
-                    <Text style={{ fontSize: 12, fontWeight: "700", color: theme.primary }}>
-                      Lihat QR
-                    </Text>
-                  </AnimatedPressable>
-
-                  <View style={{ flexDirection: "row", gap: 8 }}>
-                    <AnimatedPressable
-                      onPress={() => {
-                        setOverrideAsset(item);
-                        setOverrideStatus(item.status);
-                        setOverrideReason("");
-                      }}
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        backgroundColor: isDark ? "rgba(245, 158, 11, 0.15)" : "rgba(245, 158, 11, 0.1)",
-                        paddingHorizontal: 12,
-                        paddingVertical: 8,
-                        borderRadius: 10,
-                        gap: 4,
-                      }}
-                    >
-                      <Ionicons name="swap-horizontal-outline" size={15} color="#F59E0B" />
-                      <Text style={{ fontSize: 12, fontWeight: "700", color: "#F59E0B" }}>
-                        Override
-                      </Text>
-                    </AnimatedPressable>
-
-                    <AnimatedPressable
-                      onPress={() => handleOpenEditAsset(item)}
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        backgroundColor: isDark ? "rgba(255, 255, 255, 0.1)" : "#F1F5F9",
-                        paddingHorizontal: 12,
-                        paddingVertical: 8,
-                        borderRadius: 10,
-                        gap: 4,
-                      }}
-                    >
-                      <Ionicons name="create-outline" size={15} color={theme.textPrimary} />
-                      <Text style={{ fontSize: 12, fontWeight: "700", color: theme.textPrimary }}>
-                        Edit
-                      </Text>
-                    </AnimatedPressable>
-                  </View>
-                </View>
-              </View>
+                onEdit={() => handleOpenEditAsset(item)}
+              />
             )}
           />
         )}

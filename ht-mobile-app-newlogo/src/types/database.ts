@@ -97,6 +97,27 @@ export type Database = {
         };
         Returns: any;
       };
+      approve_borrow_request: {
+        Args: {
+          p_tx_id: string;
+          p_admin_id?: string | null;
+        };
+        Returns: any;
+      };
+      scan_to_borrow: {
+        Args: {
+          p_scanned_qr: string;
+          p_tx_id?: string | null;
+          p_user_id?: string | null;
+        };
+        Returns: any;
+      };
+      confirm_physical_handover: {
+        Args: {
+          p_asset_id: string;
+        };
+        Returns: any;
+      };
       approve_transaction: {
         Args: {
           p_transaction_id: string;

@@ -10,6 +10,7 @@ import {
   Modal,
   Image,
   Platform,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -311,72 +312,51 @@ export default function AdminPanelScreen() {
     setSelectedApproveGroup(null);
     setSelectedBatchModalGroup(null);
 
-    let error: any = null;
-    if (group.isBatch && group.batch_id) {
-      let cleanBatchId = group.batch_id;
-      if (cleanBatchId.startsWith("batch-")) {
-        cleanBatchId = cleanBatchId.replace("batch-", "");
+    try {
+      let error: any = null;
+      if (group.isBatch && group.batch_id) {
+        let cleanBatchId = group.batch_id;
+        if (cleanBatchId.startsWith("batch-")) {
+          cleanBatchId = cleanBatchId.replace("batch-", "");
+        }
+
+        const res = await supabase.rpc("approve_batch_transaction", {
+          p_batch_id: cleanBatchId,
+        });
+        error = res.error;
+      } else {
+        const res = await supabase.rpc("approve_borrow_request", {
+          p_tx_id: group.mainTx.id,
+          p_admin_id: profile?.id || null,
+        });
+        error = res.error;
       }
 
-      const res = await supabase.rpc("approve_batch_transaction", {
-        p_batch_id: cleanBatchId,
-      });
-      error = res.error;
-
-      // Safeguard: Ensure transactions status is APPROVED and assets status remains tersedia awaiting physical QR scan
-      const { data: batchTxs } = await supabase
-        .from("transactions")
-        .select("asset_id")
-        .eq("batch_id", cleanBatchId);
-
-      if (batchTxs && batchTxs.length > 0) {
-        const assetIds = batchTxs.map((t) => t.asset_id);
-        await supabase
-          .from("transactions")
-          .update({ status: "APPROVED", reviewed_at: new Date().toISOString() })
-          .eq("batch_id", cleanBatchId);
-        await supabase
-          .from("assets")
-          .update({ status: "tersedia", updated_at: new Date().toISOString() })
-          .in("id", assetIds);
+      if (error) {
+        Alert.alert("Gagal Menyetujui", error.message || getFriendlyErrorMessage(error));
+        setToastConfig({
+          visible: true,
+          title: "Gagal Menyetujui",
+          message: error.message || getFriendlyErrorMessage(error, "Gagal memproses persetujuan."),
+          icon: "❌",
+          isDanger: true,
+        });
+      } else {
+        setToastConfig({
+          visible: true,
+          title: "Permohonan Disetujui (APPROVED)",
+          message: group.isBatch
+            ? `Seluruh permohonan (${group.items.length} HT) dalam batch ${group.batch_code || ""} berhasil disetujui (APPROVED). Status permohonan disetujui, siap di-scan serah terima fisik di mobile.`
+            : `Pengajuan peminjaman unit ${group.mainTx.asset?.name || "HT"} berhasil disetujui (APPROVED). Siap di-scan serah terima fisik di mobile.`,
+          icon: "✅",
+        });
+        fetchApprovals();
+        fetchAssets();
       }
-    } else {
-      const res = await supabase.rpc("approve_transaction", {
-        p_transaction_id: group.mainTx.id,
-      });
-      error = res.error;
-
-      await supabase
-        .from("transactions")
-        .update({ status: "APPROVED", reviewed_at: new Date().toISOString() })
-        .eq("id", group.mainTx.id);
-      await supabase
-        .from("assets")
-        .update({ status: "tersedia", updated_at: new Date().toISOString() })
-        .eq("id", group.mainTx.asset_id);
-    }
-
-    setProcessingTxId(null);
-
-    if (error) {
-      setToastConfig({
-        visible: true,
-        title: "Gagal Menyetujui",
-        message: getFriendlyErrorMessage(error, "Gagal memproses persetujuan."),
-        icon: "❌",
-        isDanger: true,
-      });
-    } else {
-      setToastConfig({
-        visible: true,
-        title: "Permohonan Disetujui (APPROVED)",
-        message: group.isBatch
-          ? `Seluruh permohonan (${group.items.length} HT) dalam batch ${group.batch_code || ""} berhasil disetujui (APPROVED). Status permohonan disetujui, siap di-scan serah terima fisik di mobile.`
-          : `Pengajuan peminjaman unit ${group.mainTx.asset?.name || "HT"} berhasil disetujui (APPROVED). Siap di-scan serah terima fisik di mobile.`,
-        icon: "✅",
-      });
-      fetchApprovals();
-      fetchAssets();
+    } catch (err: any) {
+      Alert.alert("Kesalahan Sistem", err.message || "Gagal menyetujui permohonan.");
+    } finally {
+      setProcessingTxId(null);
     }
   }
 

@@ -1,5 +1,4 @@
 import "../global.css";
-import { View, Platform } from "react-native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -68,39 +67,11 @@ function StackContent() {
 export default function RootLayout() {
   return (
     <GlobalErrorBoundary>
-      <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#090D16" }}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <ThemeProvider>
             <AuthProvider>
-              <View
-                style={{
-                  flex: 1,
-                  width: "100%",
-                  height: "100%",
-                  backgroundColor: "#090D16",
-                  alignItems: "center",
-                }}
-              >
-                <View
-                  style={{
-                    flex: 1,
-                    width: "100%",
-                    maxWidth: Platform.OS === "web" ? 640 : "100%",
-                    height: "100%",
-                    backgroundColor: "transparent",
-                    ...(Platform.OS === "web"
-                      ? {
-                          boxShadow: "0 0 40px rgba(0, 0, 0, 0.5)",
-                          borderLeftWidth: 1,
-                          borderRightWidth: 1,
-                          borderColor: "rgba(255, 255, 255, 0.08)",
-                        }
-                      : {}),
-                  }}
-                >
-                  <StackContent />
-                </View>
-              </View>
+              <StackContent />
             </AuthProvider>
           </ThemeProvider>
         </SafeAreaProvider>
