@@ -8,8 +8,8 @@ import {
   Modal,
   ActivityIndicator,
   Platform,
-  Alert,
 } from "react-native";
+import { SafeAlert } from "@/lib/safeAlert";
 import { useFocusEffect, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
@@ -189,15 +189,11 @@ export default function HomeScreen() {
       setPendingApprovals((pendingRes.data as Transaction[]) ?? []);
       setApprovedApprovals((approvedRes.data as Transaction[]) ?? []);
 
-      // 2. Fetch Assets Summary & Pending Transactions
+      // 2. Fetch Assets Summary & Reserved Transactions (PENDING or APPROVED-awaiting-scan)
       const { data: allAssets } = await supabase.from("assets").select("id, status");
-      const { data: pendingTxs } = await supabase
-        .from("transactions")
-        .select("asset_id")
-        .eq("action", "BORROW")
-        .eq("status", "PENDING");
+      const { data: reservedRows } = await supabase.rpc("get_reserved_asset_ids");
 
-      const pendingAssetIds = new Set((pendingTxs || []).map((t) => t.asset_id));
+      const pendingAssetIds = new Set((reservedRows || []).map((t: { asset_id: string }) => t.asset_id));
 
       if (allAssets) {
         setTotalAssetsCount(allAssets.length);
@@ -212,13 +208,9 @@ export default function HomeScreen() {
         .select("*")
         .order("name", { ascending: true });
 
-      const { data: pendingTxs } = await supabase
-        .from("transactions")
-        .select("asset_id")
-        .eq("action", "BORROW")
-        .eq("status", "PENDING");
+      const { data: reservedRows } = await supabase.rpc("get_reserved_asset_ids");
 
-      const pendingAssetIds = new Set((pendingTxs || []).map((t) => t.asset_id));
+      const pendingAssetIds = new Set((reservedRows || []).map((t: { asset_id: string }) => t.asset_id));
 
       if (catalog) {
         setAvailableAssets((catalog as Asset[]).filter((a) => a.status === "tersedia" && !pendingAssetIds.has(a.id)));
@@ -368,7 +360,7 @@ export default function HomeScreen() {
       }
 
       if (error) {
-        Alert.alert("Gagal Menyetujui", error.message || getFriendlyErrorMessage(error));
+        SafeAlert.alert("Gagal Menyetujui", error.message || getFriendlyErrorMessage(error));
         setToastConfig({
           visible: true,
           title: "Gagal Menyetujui",
@@ -394,7 +386,7 @@ export default function HomeScreen() {
         loadData(false);
       }
     } catch (err: any) {
-      Alert.alert("Kesalahan Sistem", err.message || "Gagal memproses persetujuan.");
+      SafeAlert.alert("Kesalahan Sistem", err.message || "Gagal memproses persetujuan.");
     } finally {
       setActionProcessing(false);
     }

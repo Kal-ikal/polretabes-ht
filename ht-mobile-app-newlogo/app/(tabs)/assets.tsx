@@ -178,14 +178,10 @@ export default function AdminAssetsScreen() {
       .select("*")
       .order("name", { ascending: true });
 
-    const { data: pendingTxs } = await supabase
-      .from("transactions")
-      .select("asset_id")
-      .eq("action", "BORROW")
-      .eq("status", "PENDING");
+    const { data: reservedRows } = await supabase.rpc("get_reserved_asset_ids");
 
     if (rawAssets) {
-      const pendingAssetIds = new Set((pendingTxs || []).map((t) => t.asset_id));
+      const pendingAssetIds = new Set((reservedRows || []).map((t: { asset_id: string }) => t.asset_id));
       const updatedList = (rawAssets as Asset[]).map((asset) => {
         if (pendingAssetIds.has(asset.id) && (asset.status || "").toLowerCase() === "tersedia") {
           return { ...asset, status: "pending" as AssetStatus };

@@ -4,13 +4,14 @@ import {
   View,
   Text,
   ScrollView,
-  Share,
   Platform,
   Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { safePrintAsync } from "@/lib/safePrint";
 import { SafeHaptics } from "@/lib/safeHaptics";
+import { SafeAlert } from "@/lib/safeAlert";
+import { shareOrCopyText } from "@/lib/safeShare";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { useAppTheme } from "@/context/ThemeContext";
 
@@ -63,10 +64,16 @@ export function CredentialSlipModal({ visible, onClose, data }: Props) {
 _Catatan: Harap simpan kredensial ini dan jaga kerahasiaan kata sandi Anda._
 ══════════════════════════════`;
 
-      await Share.share({
+      const result = await shareOrCopyText({
         title: `Slip Kredensial - ${data.fullName}`,
         message: message,
       });
+
+      if (result === "copied") {
+        SafeAlert.alert("Disalin", "Slip kredensial berhasil disalin ke clipboard.");
+      } else if (result === "failed") {
+        SafeAlert.alert("Gagal Membagikan", "Tidak dapat membagikan slip kredensial di perangkat ini.");
+      }
     } catch (err) {
       console.error("Share error:", err);
     }

@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   Image,
   Platform,
 } from "react-native";
@@ -12,6 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { SafeHaptics } from "@/lib/safeHaptics";
+import { SafeAlert } from "@/lib/safeAlert";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { useAppTheme } from "@/context/ThemeContext";
 import { supabase } from "@/lib/supabase";
@@ -52,19 +52,21 @@ export function OfficialLetterUploader({
         const fileExt = fileName.split(".").pop() || "jpg";
         const storagePath = `surat-resmi/${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
 
-        if (Platform.OS === "web") {
-          const response = await fetch(uri);
-          const blob = await response.blob();
-          const { data: storageData, error: storageErr } = await supabase.storage
-            .from("official-documents")
-            .upload(storagePath, blob, { contentType: mimeType, upsert: true });
+        // fetch() resolves file:// / content:// URIs on native (Expo) just
+        // like it does blob URIs on web, so this upload path works on both
+        // platforms — it used to be gated to web only, which meant native
+        // never actually stored documents in Supabase Storage.
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        const { data: storageData, error: storageErr } = await supabase.storage
+          .from("official-documents")
+          .upload(storagePath, blob, { contentType: mimeType, upsert: true });
 
-          if (!storageErr && storageData) {
-            const { data: publicUrlData } = supabase.storage
-              .from("official-documents")
-              .getPublicUrl(storagePath);
-            uploadedUrl = publicUrlData.publicUrl;
-          }
+        if (!storageErr && storageData) {
+          const { data: publicUrlData } = supabase.storage
+            .from("official-documents")
+            .getPublicUrl(storagePath);
+          uploadedUrl = publicUrlData.publicUrl;
         }
       } catch (storageErr) {
         console.warn("Storage upload fallback to data URI:", storageErr);
@@ -90,7 +92,7 @@ export function OfficialLetterUploader({
       } catch {}
     } catch (err: any) {
       console.error("Error processing letter document:", err);
-      Alert.alert("Gagal Memproses Surat", "Terjadi kesalahan saat memproses berkas surat.");
+      SafeAlert.alert("Gagal Memproses Surat", "Terjadi kesalahan saat memproses berkas surat.");
     } finally {
       setUploading(false);
     }
@@ -101,7 +103,7 @@ export function OfficialLetterUploader({
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert("Izin Kamera", "Izin akses kamera diperlukan untuk memotret surat resmi.");
+        SafeAlert.alert("Izin Kamera", "Izin akses kamera diperlukan untuk memotret surat resmi.");
         return;
       }
 
@@ -122,7 +124,7 @@ export function OfficialLetterUploader({
         );
       }
     } catch (e: any) {
-      Alert.alert("Kesalahan Kamera", e.message || "Gagal membuka kamera.");
+      SafeAlert.alert("Kesalahan Kamera", e.message || "Gagal membuka kamera.");
     }
   };
 
@@ -131,7 +133,7 @@ export function OfficialLetterUploader({
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert("Izin Galeri", "Izin galeri diperlukan untuk memilih foto surat resmi.");
+        SafeAlert.alert("Izin Galeri", "Izin galeri diperlukan untuk memilih foto surat resmi.");
         return;
       }
 
@@ -152,7 +154,7 @@ export function OfficialLetterUploader({
         );
       }
     } catch (e: any) {
-      Alert.alert("Kesalahan Galeri", e.message || "Gagal memilih dari galeri.");
+      SafeAlert.alert("Kesalahan Galeri", e.message || "Gagal memilih dari galeri.");
     }
   };
 
@@ -175,7 +177,7 @@ export function OfficialLetterUploader({
         );
       }
     } catch (e: any) {
-      Alert.alert("Kesalahan Dokumen", e.message || "Gagal memilih dokumen.");
+      SafeAlert.alert("Kesalahan Dokumen", e.message || "Gagal memilih dokumen.");
     }
   };
 
@@ -271,16 +273,21 @@ export function OfficialLetterUploader({
       ) : (
         // Upload Buttons Grid
         <View style={styles.buttonsGrid}>
-          <AnimatedPressable
-            onPress={handleTakePhoto}
-            style={[styles.uploadBtn, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}
-          >
-            <View style={[styles.iconCircle, { backgroundColor: theme.primary + "15" }]}>
-              <Ionicons name="camera" size={20} color={theme.primary} />
-            </View>
-            <Text style={[styles.btnLabel, { color: theme.textPrimary }]}>Foto Kamera</Text>
-            <Text style={[styles.btnSub, { color: theme.textSecondary }]}>Ambil fisik surat</Text>
-          </AnimatedPressable>
+          {Platform.OS !== "web" && (
+            // expo-image-picker's camera capture isn't supported on web, so
+            // this button is native-only; web users still get the same
+            // outcome via the OS file picker under "Dari Galeri".
+            <AnimatedPressable
+              onPress={handleTakePhoto}
+              style={[styles.uploadBtn, { backgroundColor: theme.cardBackground, borderColor: theme.cardBorder }]}
+            >
+              <View style={[styles.iconCircle, { backgroundColor: theme.primary + "15" }]}>
+                <Ionicons name="camera" size={20} color={theme.primary} />
+              </View>
+              <Text style={[styles.btnLabel, { color: theme.textPrimary }]}>Foto Kamera</Text>
+              <Text style={[styles.btnSub, { color: theme.textSecondary }]}>Ambil fisik surat</Text>
+            </AnimatedPressable>
+          )}
 
           <AnimatedPressable
             onPress={handlePickGallery}

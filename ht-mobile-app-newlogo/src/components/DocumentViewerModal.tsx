@@ -13,6 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import { SafeHaptics } from "@/lib/safeHaptics";
+import { SafeAlert } from "@/lib/safeAlert";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { useAppTheme } from "@/context/ThemeContext";
 
@@ -54,11 +55,24 @@ export function DocumentViewerModal({
     onClose();
   };
 
+  const isRemoteUrl = documentUrl?.startsWith("http://") || documentUrl?.startsWith("https://");
+
   const handleOpenExternal = async () => {
     if (!documentUrl) return;
     try {
-      if (documentUrl.startsWith("http://") || documentUrl.startsWith("https://")) {
+      if (Platform.OS === "web") {
+        // window.open() also works for data: URIs on web (opens/renders the
+        // PDF in a new tab), unlike Linking.openURL which only handles http(s).
+        window.open(documentUrl, "_blank");
+        return;
+      }
+      if (isRemoteUrl) {
         await Linking.openURL(documentUrl);
+      } else {
+        SafeAlert.alert(
+          "Berkas Tersimpan Lokal",
+          "Dokumen ini belum berhasil diunggah ke server dan hanya tersimpan sementara di perangkat ini, sehingga belum bisa dibuka sebagai berkas terpisah. Coba unggah ulang saat koneksi internet stabil."
+        );
       }
     } catch (e) {
       console.warn("Could not open external url:", e);
@@ -97,7 +111,7 @@ export function DocumentViewerModal({
             ) : null}
           </View>
 
-          {documentUrl && (documentUrl.startsWith("http://") || documentUrl.startsWith("https://")) ? (
+          {documentUrl && (isRemoteUrl || Platform.OS === "web") ? (
             <AnimatedPressable
               onPress={handleOpenExternal}
               style={styles.circleBtn}
@@ -128,15 +142,13 @@ export function DocumentViewerModal({
               <Text style={styles.pdfDesc}>
                 Berkas PDF telah terlampir pada sistem.
               </Text>
-              {documentUrl.startsWith("http") && (
-                <AnimatedPressable
-                  onPress={handleOpenExternal}
-                  style={styles.openPdfBtn}
-                >
-                  <Ionicons name="open-outline" size={18} color="#ffffff" style={{ marginRight: 8 }} />
-                  <Text style={styles.openPdfBtnText}>Buka Dokumen PDF</Text>
-                </AnimatedPressable>
-              )}
+              <AnimatedPressable
+                onPress={handleOpenExternal}
+                style={styles.openPdfBtn}
+              >
+                <Ionicons name="open-outline" size={18} color="#ffffff" style={{ marginRight: 8 }} />
+                <Text style={styles.openPdfBtnText}>Buka Dokumen PDF</Text>
+              </AnimatedPressable>
             </View>
           ) : (
             <ScrollView

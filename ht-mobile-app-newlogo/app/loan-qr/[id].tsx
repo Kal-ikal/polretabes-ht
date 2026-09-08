@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   ScrollView,
   Image,
-  Share,
   Platform,
   useWindowDimensions,
 } from "react-native";
@@ -13,6 +12,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeHaptics } from "@/lib/safeHaptics";
+import { shareOrCopyText } from "@/lib/safeShare";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { useAppTheme } from "@/context/ThemeContext";
@@ -234,13 +234,28 @@ export default function LoanQRScreen() {
 
   // Share QR Code Details
   async function handleShareQR(asset: Asset) {
-    try {
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(asset.code)}`;
-      await Share.share({
-        message: `[ADMIN POLRESTA HT]\nStiker QR Unit: ${asset.name}\nKode Aset: ${asset.code}\nNomor Seri: ${asset.serial_number || "-"}\n\nLihat Gambar QR Code:\n${qrUrl}`,
-        title: `Stiker QR Code ${asset.name}`,
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(asset.code)}`;
+    const result = await shareOrCopyText({
+      title: `Stiker QR Code ${asset.name}`,
+      message: `[ADMIN POLRESTA HT]\nStiker QR Unit: ${asset.name}\nKode Aset: ${asset.code}\nNomor Seri: ${asset.serial_number || "-"}\n\nLihat Gambar QR Code:\n${qrUrl}`,
+    });
+
+    if (result === "copied") {
+      setToastConfig({
+        visible: true,
+        title: "Disalin",
+        message: "Rincian stiker QR berhasil disalin ke clipboard.",
+        icon: "📋",
       });
-    } catch {}
+    } else if (result === "failed") {
+      setToastConfig({
+        visible: true,
+        title: "Gagal Membagikan",
+        message: "Tidak dapat membagikan rincian stiker QR di perangkat ini.",
+        icon: "❌",
+        isDanger: true,
+      });
+    }
   }
 
   // Admin Access Restriction Guard

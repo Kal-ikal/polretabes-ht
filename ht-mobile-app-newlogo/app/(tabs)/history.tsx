@@ -8,12 +8,13 @@ import {
   Modal,
   ScrollView,
   Platform,
-  Share,
 } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeHaptics } from "@/lib/safeHaptics";
+import { SafeAlert } from "@/lib/safeAlert";
+import { shareOrCopyText } from "@/lib/safeShare";
 import Animated, { ZoomIn, ZoomOut } from "react-native-reanimated";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
@@ -682,14 +683,18 @@ _Dokumentasi Resmi Sistem Logistik HT Polrestabes_`;
   const handleShareReceipt = async (group: GroupedTransaction) => {
     try {
       SafeHaptics.impactAsync();
-      const receiptMessage = formatReceiptForSharing(group);
+    } catch {}
+    const receiptMessage = formatReceiptForSharing(group);
 
-      await Share.share({
-        title: "Bukti Transaksi HT Polrestabes",
-        message: receiptMessage,
-      });
-    } catch (err) {
-      console.error("Share error:", err);
+    const result = await shareOrCopyText({
+      title: "Bukti Transaksi HT Polrestabes",
+      message: receiptMessage,
+    });
+
+    if (result === "copied") {
+      SafeAlert.alert("Disalin", "Bukti transaksi berhasil disalin ke clipboard.");
+    } else if (result === "failed") {
+      SafeAlert.alert("Gagal Membagikan", "Tidak dapat membagikan bukti transaksi di perangkat ini.");
     }
   };
 
