@@ -1,6 +1,6 @@
 export type AssetStatus = "tersedia" | "dipinjam" | "rusak" | "pending";
 export type TransactionAction = "BORROW" | "RETURN";
-export type TransactionStatus = "PENDING" | "APPROVED" | "REJECTED";
+export type TransactionStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "ACTIVE" | "COMPLETED";
 
 export interface Profile {
   id: string;
@@ -29,6 +29,7 @@ export interface Transaction {
   id: string;
   asset_id: string;
   user_id: string | null;
+  borrower_id?: string | null;
   borrower_name: string | null;
   borrower_nrp: string | null;
   kesatuan: string | null;
