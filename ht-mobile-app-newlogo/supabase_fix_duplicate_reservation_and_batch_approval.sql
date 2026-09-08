@@ -94,7 +94,21 @@ GRANT EXECUTE ON FUNCTION public.get_reserved_asset_ids() TO authenticated, anon
 -- ============================================================================
 -- 2. Perkuat process_asset_transaction: tolak pengajuan baru jika unit sudah
 --    "dipesan" (PENDING atau APPROVED-belum-discan), bukan hanya PENDING.
+--
+--    PENTING: sebelum ini ada DUA versi process_asset_transaction hidup
+--    berdampingan di database -- versi lama 7 parameter (tanpa due_date/
+--    document_url/document_name) dan versi baru 10 parameter. Alur
+--    pengembalian (return/[id].tsx) memanggil RPC ini hanya dengan 4 nama
+--    parameter (p_asset_id, p_action, p_condition, p_notes) yang COCOK
+--    DENGAN KEDUANYA sekaligus -- Postgres/PostgREST tidak bisa menentukan
+--    mana yang dipanggil ("function ... is not unique"), sehingga RPC
+--    pengembalian gagal dan aplikasi terpaksa jatuh ke fallback update
+--    manual (lihat komentar "applying fallback update" di kode). Fungsi
+--    versi lama dihapus di sini agar RPC pengembalian akhirnya benar-benar
+--    berhasil lewat guard FSM, bukan lewat fallback.
 -- ============================================================================
+DROP FUNCTION IF EXISTS public.process_asset_transaction(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT);
+
 CREATE OR REPLACE FUNCTION public.process_asset_transaction(
   p_asset_id UUID,
   p_action TEXT,
@@ -327,7 +341,16 @@ $$;
 --    transaksi dalam satu batch sekaligus (bukan sebagian), dengan guard yang
 --    sama seperti approve_borrow_request, dan otomatis membatalkan pengajuan
 --    PENDING duplikat lain untuk unit-unit yang sama.
+--
+--    PENTING: versi lama fungsi ini hanya punya 1 parameter (p_batch_id).
+--    Aplikasi SELALU memanggil RPC ini hanya dengan {p_batch_id} -- kalau
+--    versi lama & versi baru (dengan p_admin_id opsional) dibiarkan hidup
+--    bersamaan, panggilan {p_batch_id} itu jadi AMBIGU di mata Postgres
+--    ("function approve_batch_transaction(uuid) is not unique") dan tombol
+--    "Setujui Batch" akan gagal total untuk SEMUA pengguna. Versi lama
+--    dihapus eksplisit dulu di sini sebelum versi baru dibuat.
 -- ============================================================================
+DROP FUNCTION IF EXISTS public.approve_batch_transaction(UUID);
 CREATE OR REPLACE FUNCTION public.approve_batch_transaction(
   p_batch_id UUID,
   p_admin_id UUID DEFAULT auth.uid()
@@ -424,7 +447,15 @@ $$;
 
 -- ============================================================================
 -- 5. reject_batch_transaction: menolak SELURUH baris pending pada satu batch.
+--
+--    Sama seperti approve_batch_transaction di atas: versi lama fungsi ini
+--    punya 2 parameter (p_batch_id, p_reason) tanpa p_admin_id. Aplikasi
+--    selalu memanggil dengan {p_batch_id, p_reason} saja, yang cocok dengan
+--    KEDUA versi sekaligus kalau dibiarkan hidup bersamaan -> ambigu & tombol
+--    "Tolak Batch" gagal total. Versi lama dihapus eksplisit dulu di sini.
 -- ============================================================================
+DROP FUNCTION IF EXISTS public.reject_batch_transaction(UUID, TEXT);
+
 CREATE OR REPLACE FUNCTION public.reject_batch_transaction(
   p_batch_id UUID,
   p_reason TEXT DEFAULT 'Ditolak oleh admin',
