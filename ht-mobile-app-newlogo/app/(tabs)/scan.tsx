@@ -9,12 +9,12 @@ import {
   Platform,
   Modal,
   TextInput,
-  Alert,
 } from "react-native";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeHaptics } from "@/lib/safeHaptics";
+import { SafeAlert } from "@/lib/safeAlert";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/hooks/useTheme";
@@ -258,14 +258,10 @@ export default function ScanScreen() {
       .select("*")
       .order("name", { ascending: true });
 
-    const { data: pendingTxs } = await supabase
-      .from("transactions")
-      .select("asset_id")
-      .eq("action", "BORROW")
-      .eq("status", "PENDING");
+    const { data: reservedRows } = await supabase.rpc("get_reserved_asset_ids");
 
     if (rawAssets) {
-      const pendingAssetIds = new Set((pendingTxs || []).map((t) => t.asset_id));
+      const pendingAssetIds = new Set((reservedRows || []).map((t: { asset_id: string }) => t.asset_id));
       const updatedList = (rawAssets as Asset[]).map((asset) => {
         if (pendingAssetIds.has(asset.id) && (asset.status || "").toLowerCase() === "tersedia") {
           return { ...asset, status: "pending" as AssetStatus };
@@ -389,7 +385,7 @@ export default function ScanScreen() {
         setLoading(false);
 
         if (error) {
-          Alert.alert("Gagal", error.message || getFriendlyErrorMessage(error));
+          SafeAlert.alert("Gagal", error.message || getFriendlyErrorMessage(error));
           setTimeout(() => {
             setScanned(false);
             isProcessingRef.current = false;
@@ -403,7 +399,7 @@ export default function ScanScreen() {
           } catch {}
         }
 
-        Alert.alert("Sukses", "Aset berhasil diserahterimakan", [
+        SafeAlert.alert("Sukses", "Aset berhasil diserahterimakan", [
           {
             text: "OK",
             onPress: () => router.replace("/history"),
@@ -412,7 +408,7 @@ export default function ScanScreen() {
         router.replace("/history");
       } catch (err: any) {
         setLoading(false);
-        Alert.alert("Gagal", err.message || "Gagal memproses serah terima.");
+        SafeAlert.alert("Gagal", err.message || "Gagal memproses serah terima.");
         setTimeout(() => {
           setScanned(false);
           isProcessingRef.current = false;
@@ -566,7 +562,7 @@ export default function ScanScreen() {
     if (batchSelectedAssets.length === 0) return;
 
     if (batchSelectedAssets.length < 2) {
-      Alert.alert("Gagal", "Peminjaman Batch minimal 2 unit. Untuk 1 unit, gunakan peminjaman reguler.");
+      SafeAlert.alert("Gagal", "Peminjaman Batch minimal 2 unit. Untuk 1 unit, gunakan peminjaman reguler.");
       return;
     }
 
@@ -860,6 +856,23 @@ export default function ScanScreen() {
                   <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
                 </AnimatedPressable>
               </View>
+
+              {(loading || errorMsg) && (
+                <View
+                  style={{
+                    backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(2, 132, 199, 0.08)",
+                    borderRadius: 10,
+                    paddingVertical: 6,
+                    paddingHorizontal: 12,
+                    maxWidth: 440,
+                    width: "100%",
+                  }}
+                >
+                  <Text style={{ color: theme.textPrimary, fontSize: 12, fontWeight: "600", textAlign: "center" }}>
+                    {loading ? "Memeriksa kode..." : errorMsg}
+                  </Text>
+                </View>
+              )}
             </View>
           ) : (
             /* Native: Camera View */

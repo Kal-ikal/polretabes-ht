@@ -10,9 +10,9 @@ import {
   Modal,
   Image,
   Platform,
-  Alert,
   Share,
 } from "react-native";
+import { SafeAlert } from "@/lib/safeAlert";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -225,14 +225,10 @@ export default function AdminPanelScreen() {
       .select("*")
       .order("name", { ascending: true });
 
-    const { data: pendingTxs } = await supabase
-      .from("transactions")
-      .select("asset_id")
-      .eq("action", "BORROW")
-      .eq("status", "PENDING");
+    const { data: reservedRows } = await supabase.rpc("get_reserved_asset_ids");
 
     if (rawAssets) {
-      const pendingAssetIds = new Set((pendingTxs || []).map((t) => t.asset_id));
+      const pendingAssetIds = new Set((reservedRows || []).map((t: { asset_id: string }) => t.asset_id));
       const updatedList = (rawAssets as Asset[]).map((asset) => {
         if (pendingAssetIds.has(asset.id) && (asset.status || "").toLowerCase() === "tersedia") {
           return { ...asset, status: "pending" as AssetStatus };
@@ -417,7 +413,7 @@ export default function AdminPanelScreen() {
       if (error) throw error;
       fetchPresets();
     } catch (err: any) {
-      Alert.alert("Gagal", err.message || "Gagal mengubah status aktif preset.");
+      SafeAlert.alert("Gagal", err.message || "Gagal mengubah status aktif preset.");
     }
   }
 
@@ -438,7 +434,7 @@ export default function AdminPanelScreen() {
         });
         fetchPresets();
       } catch (err: any) {
-        Alert.alert("Gagal Menghapus", err.message || "Gagal menghapus preset.");
+        SafeAlert.alert("Gagal Menghapus", err.message || "Gagal menghapus preset.");
       }
     };
 
@@ -449,55 +445,13 @@ export default function AdminPanelScreen() {
       return;
     }
 
-    Alert.alert(
+    SafeAlert.alert(
       "Hapus Preset Durasi",
       `Apakah Anda yakin ingin menghapus preset "${preset.label}"?`,
       [
         { text: "Batal", style: "cancel" },
         { text: "Hapus", style: "destructive", onPress: doDelete },
       ]
-    );
-  }
-
-  // Admin Access Gate
-  if (profile?.role !== "admin") {
-    return (
-      <LinearGradient colors={theme.backgroundGradient} style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}>
-        <View
-          style={{
-            backgroundColor: theme.cardBackground,
-            borderColor: theme.cardBorder,
-            borderWidth: 1,
-            borderRadius: 24,
-            padding: 28,
-            alignItems: "center",
-            width: "100%",
-          }}
-        >
-          <Text style={{ fontSize: 44, marginBottom: 12 }}>🛡️</Text>
-          <Text style={{ color: theme.textPrimary, fontWeight: "800", fontSize: 20, textAlign: "center" }}>
-            Akses Ditolak
-          </Text>
-          <Text style={{ color: theme.textSecondary, textAlign: "center", marginTop: 6, marginBottom: 20, fontSize: 14 }}>
-            Halaman ini khusus untuk Admin Sistem. Peran Anda saat ini adalah Petugas.
-          </Text>
-          <AnimatedPressable
-            onPress={() => router.replace("/(tabs)")}
-            style={{
-              backgroundColor: theme.primary,
-              paddingVertical: 14,
-              paddingHorizontal: 24,
-              borderRadius: 14,
-              width: "100%",
-              alignItems: "center",
-            }}
-          >
-            <Text style={{ color: theme.primaryTextOnButton, fontWeight: "700", fontSize: 16 }}>
-              Kembali ke Aplikasi Mobile
-            </Text>
-          </AnimatedPressable>
-        </View>
-      </LinearGradient>
     );
   }
 
@@ -577,6 +531,48 @@ export default function AdminPanelScreen() {
     return { total, borrowedCount, pendingCount, overdueCount };
   }, [historyList]);
 
+  // Admin Access Gate
+  if (profile?.role !== "admin") {
+    return (
+      <LinearGradient colors={theme.backgroundGradient} style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}>
+        <View
+          style={{
+            backgroundColor: theme.cardBackground,
+            borderColor: theme.cardBorder,
+            borderWidth: 1,
+            borderRadius: 24,
+            padding: 28,
+            alignItems: "center",
+            width: "100%",
+          }}
+        >
+          <Text style={{ fontSize: 44, marginBottom: 12 }}>🛡️</Text>
+          <Text style={{ color: theme.textPrimary, fontWeight: "800", fontSize: 20, textAlign: "center" }}>
+            Akses Ditolak
+          </Text>
+          <Text style={{ color: theme.textSecondary, textAlign: "center", marginTop: 6, marginBottom: 20, fontSize: 14 }}>
+            Halaman ini khusus untuk Admin Sistem. Peran Anda saat ini adalah Petugas.
+          </Text>
+          <AnimatedPressable
+            onPress={() => router.replace("/(tabs)")}
+            style={{
+              backgroundColor: theme.primary,
+              paddingVertical: 14,
+              paddingHorizontal: 24,
+              borderRadius: 14,
+              width: "100%",
+              alignItems: "center",
+            }}
+          >
+            <Text style={{ color: theme.primaryTextOnButton, fontWeight: "700", fontSize: 16 }}>
+              Kembali ke Aplikasi Mobile
+            </Text>
+          </AnimatedPressable>
+        </View>
+      </LinearGradient>
+    );
+  }
+
   // --- Handlers: Approve & Reject ---
   async function handleApproveGroup(group: GroupedTransaction) {
     setProcessingTxId(group.id);
@@ -604,7 +600,7 @@ export default function AdminPanelScreen() {
       }
 
       if (error) {
-        Alert.alert("Gagal Menyetujui", error.message || getFriendlyErrorMessage(error));
+        SafeAlert.alert("Gagal Menyetujui", error.message || getFriendlyErrorMessage(error));
         setToastConfig({
           visible: true,
           title: "Gagal Menyetujui",
@@ -625,7 +621,7 @@ export default function AdminPanelScreen() {
         fetchAssets();
       }
     } catch (err: any) {
-      Alert.alert("Kesalahan Sistem", err.message || "Gagal menyetujui permohonan.");
+      SafeAlert.alert("Kesalahan Sistem", err.message || "Gagal menyetujui permohonan.");
     } finally {
       setProcessingTxId(null);
     }
