@@ -110,8 +110,15 @@ export default function ReturnScreen() {
         rpcError = null;
 
         try {
+          // Ikutkan data peminjam dari transaksi BORROW aktif (activeTx) supaya
+          // baris RETURN ini tidak tampil kosong (tanpa nama/NRP/kesatuan) di
+          // Riwayat/Audit dibanding baris yang diproses lewat RPC normal.
           await supabase.from("transactions").insert({
             asset_id: id!,
+            borrower_id: activeTx?.borrower_id ?? null,
+            borrower_name: activeTx?.borrower_name ?? null,
+            borrower_nrp: activeTx?.borrower_nrp ?? null,
+            kesatuan: activeTx?.kesatuan ?? null,
             action: "RETURN",
             status: "APPROVED",
             condition: conditionValue,

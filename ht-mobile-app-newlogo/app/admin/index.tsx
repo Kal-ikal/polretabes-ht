@@ -465,18 +465,59 @@ export default function AdminPanelScreen() {
     [approvedApprovals]
   );
 
+  // Untuk tiap aset yang SAAT INI berstatus 'dipinjam', ambil hanya transaksi
+  // BORROW TERBARU-nya sebagai "peminjaman aktif". Perlu karena `historyList`
+  // menyimpan seluruh riwayat: satu unit HT yang sudah dipinjam-kembalikan
+  // berkali-kali punya banyak baris BORROW lama, dan semuanya ikut ter-join
+  // ke status aset TERKINI (bukan status saat transaksi itu terjadi) -- kalau
+  // tidak di-dedup, unit itu akan terhitung/tertampil berkali-kali sebagai
+  // "sedang dipinjam" padahal cuma 1 unit fisik yang aktif dipinjam sekarang.
+  const activeBorrowTxByAssetId = useMemo(() => {
+    const map = new Map<string, Transaction>();
+    for (const tx of historyList) {
+      if (tx.action !== "BORROW" || (tx.asset?.status || "").toLowerCase() !== "dipinjam") continue;
+      const existing = map.get(tx.asset_id);
+      if (!existing || new Date(tx.created_at).getTime() > new Date(existing.created_at).getTime()) {
+        map.set(tx.asset_id, tx);
+      }
+    }
+    return map;
+  }, [historyList]);
+
+  // Waktu RETURN (APPROVED) TERAKHIR per aset -- dipakai untuk membedakan
+  // "BORROW lama yang sudah kembali" dari "BORROW yang baru disetujui &
+  // masih menunggu discan fisik" (keduanya sama-sama tx.status='APPROVED'
+  // dengan asset.status='tersedia', tapi cuma yang pertama benar-benar
+  // "Selesai (Kembali)"). Tanpa ini, unit yang baru saja disetujui admin
+  // ikut nyasar muncul di filter "Selesai (Kembali)" padahal belum diambil.
+  const latestReturnTimeByAssetId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const tx of historyList) {
+      if (tx.action !== "RETURN" || tx.status !== "APPROVED") continue;
+      const t = new Date(tx.created_at).getTime();
+      const existing = map.get(tx.asset_id);
+      if (existing === undefined || t > existing) {
+        map.set(tx.asset_id, t);
+      }
+    }
+    return map;
+  }, [historyList]);
+
   // Grouped history transactions with filters & search
   const groupedHistoryTransactions = useMemo(() => {
     let filtered = historyList;
 
     if (historyFilter === "BORROWED") {
-      filtered = filtered.filter(
-        (tx) => tx.action === "BORROW" && (tx.asset?.status || "").toLowerCase() === "dipinjam"
-      );
+      filtered = filtered.filter((tx) => activeBorrowTxByAssetId.get(tx.asset_id)?.id === tx.id);
     } else if (historyFilter === "RETURNED") {
-      filtered = filtered.filter(
-        (tx) => tx.action === "RETURN" || (tx.status === "APPROVED" && (tx.asset?.status || "").toLowerCase() === "tersedia")
-      );
+      filtered = filtered.filter((tx) => {
+        if (tx.action === "RETURN") return true;
+        if (tx.status === "APPROVED" && (tx.asset?.status || "").toLowerCase() === "tersedia") {
+          const returnTime = latestReturnTimeByAssetId.get(tx.asset_id);
+          return returnTime !== undefined && returnTime > new Date(tx.created_at).getTime();
+        }
+        return false;
+      });
     } else if (historyFilter === "PENDING") {
       filtered = filtered.filter((tx) => tx.status === "PENDING");
     } else if (historyFilter === "REJECTED") {
@@ -508,28 +549,28 @@ export default function AdminPanelScreen() {
     }
 
     return groupTransactionsByBatch(filtered);
-  }, [historyList, historyFilter, historySearch]);
+  }, [historyList, historyFilter, historySearch, activeBorrowTxByAssetId, latestReturnTimeByAssetId]);
 
   // KPI calculations for audit
   const auditKPIs = useMemo(() => {
     const total = historyList.length;
-    let borrowedCount = 0;
     let pendingCount = 0;
-    let overdueCount = 0;
 
-    const now = new Date().getTime();
     for (const tx of historyList) {
       if (tx.status === "PENDING") pendingCount++;
-      if (tx.action === "BORROW" && (tx.asset?.status || "").toLowerCase() === "dipinjam") {
-        borrowedCount++;
-        if (tx.due_date && new Date(tx.due_date).getTime() < now) {
-          overdueCount++;
-        }
+    }
+
+    const borrowedCount = activeBorrowTxByAssetId.size;
+    let overdueCount = 0;
+    const now = new Date().getTime();
+    for (const tx of activeBorrowTxByAssetId.values()) {
+      if (tx.due_date && new Date(tx.due_date).getTime() < now) {
+        overdueCount++;
       }
     }
 
     return { total, borrowedCount, pendingCount, overdueCount };
-  }, [historyList]);
+  }, [historyList, activeBorrowTxByAssetId]);
 
   // Admin Access Gate
   if (profile?.role !== "admin") {
