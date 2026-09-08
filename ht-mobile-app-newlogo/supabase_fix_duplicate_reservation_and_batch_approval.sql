@@ -32,8 +32,10 @@ ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPT
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS cancel_reason TEXT;
 
 -- 0.1 Pastikan constraint status mengizinkan 'CANCELLED' (dipakai oleh alur
---     auto-cancel duplikat). Cari & hapus constraint check lama pada kolom
---     status apa pun namanya, lalu buat ulang dengan daftar nilai lengkap.
+--     auto-cancel duplikat) TANPA membuang nilai lama yang mungkin masih
+--     dipakai baris historis (mis. 'ACTIVE'/'COMPLETED'). Cari & hapus
+--     constraint check lama pada kolom status apa pun namanya, lalu buat
+--     ulang dengan menggabungkan daftar lama + nilai baru.
 DO $$
 DECLARE
   con RECORD;
@@ -50,7 +52,7 @@ END $$;
 
 ALTER TABLE public.transactions
   ADD CONSTRAINT transactions_status_check
-  CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'));
+  CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED', 'ACTIVE', 'COMPLETED'));
 
 -- ============================================================================
 -- 1. FUNGSI BANTU: get_reserved_asset_ids()
