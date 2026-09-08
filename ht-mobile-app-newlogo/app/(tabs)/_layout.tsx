@@ -158,12 +158,12 @@ export default function TabsLayout() {
         listeners={{ tabPress: triggerHaptic }}
       />
 
-      {/* TAB 3: KELOLA ASET (Only for Admin - Hidden for Petugas) */}
+      {/* TAB 3: STATUS/KELOLA ASET (Data status aset bersifat universal untuk
+          semua role -- petugas cuma tidak diberi tombol tambah/edit/hapus) */}
       <Tabs.Screen
         name="assets"
         options={{
-          title: "Kelola Aset",
-          href: isAdmin ? "/(tabs)/assets" : null,
+          title: isAdmin ? "Kelola Aset" : "Status Aset",
           tabBarIcon: ({ color, focused }: { color: any; focused: boolean }) => (
             <Ionicons
               name={focused ? "cube" : "cube-outline"}

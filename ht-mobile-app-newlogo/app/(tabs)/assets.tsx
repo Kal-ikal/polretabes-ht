@@ -28,12 +28,13 @@ import type { Asset, AssetStatus } from "@/types/database";
 
 interface AssetListItemProps {
   item: Asset;
+  isAdmin: boolean;
   onOpenQR: () => void;
   onOverride: () => void;
   onEdit: () => void;
 }
 
-const AssetListItem = ({ item, onOpenQR, onOverride, onEdit }: AssetListItemProps) => {
+const AssetListItem = ({ item, isAdmin, onOpenQR, onOverride, onEdit }: AssetListItemProps) => {
   const { colors, isDark } = useTheme();
 
   return (
@@ -93,43 +94,45 @@ const AssetListItem = ({ item, onOpenQR, onOverride, onEdit }: AssetListItemProp
           </Text>
         </AnimatedPressable>
 
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          <AnimatedPressable
-            onPress={onOverride}
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              backgroundColor: isDark ? "rgba(245, 158, 11, 0.15)" : "rgba(245, 158, 11, 0.1)",
-              paddingHorizontal: 12,
-              paddingVertical: 8,
-              borderRadius: 10,
-              gap: 4,
-            }}
-          >
-            <Ionicons name="swap-horizontal-outline" size={15} color="#F59E0B" />
-            <Text style={{ fontSize: 12, fontWeight: "700", color: "#F59E0B" }}>
-              Override
-            </Text>
-          </AnimatedPressable>
+        {isAdmin && (
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <AnimatedPressable
+              onPress={onOverride}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: isDark ? "rgba(245, 158, 11, 0.15)" : "rgba(245, 158, 11, 0.1)",
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 10,
+                gap: 4,
+              }}
+            >
+              <Ionicons name="swap-horizontal-outline" size={15} color="#F59E0B" />
+              <Text style={{ fontSize: 12, fontWeight: "700", color: "#F59E0B" }}>
+                Override
+              </Text>
+            </AnimatedPressable>
 
-          <AnimatedPressable
-            onPress={onEdit}
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              backgroundColor: isDark ? "rgba(255, 255, 255, 0.1)" : "#F1F5F9",
-              paddingHorizontal: 12,
-              paddingVertical: 8,
-              borderRadius: 10,
-              gap: 4,
-            }}
-          >
-            <Ionicons name="create-outline" size={15} color={colors.textPrimary} />
-            <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textPrimary }}>
-              Edit
-            </Text>
-          </AnimatedPressable>
-        </View>
+            <AnimatedPressable
+              onPress={onEdit}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: isDark ? "rgba(255, 255, 255, 0.1)" : "#F1F5F9",
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 10,
+                gap: 4,
+              }}
+            >
+              <Ionicons name="create-outline" size={15} color={colors.textPrimary} />
+              <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textPrimary }}>
+                Edit
+              </Text>
+            </AnimatedPressable>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -138,6 +141,7 @@ const AssetListItem = ({ item, onOpenQR, onOverride, onEdit }: AssetListItemProp
 export default function AdminAssetsScreen() {
   const { profile } = useAuth();
   const { theme, isDark } = useAppTheme();
+  const isAdmin = profile?.role === "admin";
 
   const [assetsList, setAssetsList] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
@@ -403,35 +407,37 @@ export default function AdminAssetsScreen() {
           >
             <View>
               <Text style={{ fontSize: 20, fontWeight: "800", color: theme.textPrimary }}>
-                Kelola Inventaris HT
+                {isAdmin ? "Kelola Inventaris HT" : "Status Inventaris HT"}
               </Text>
               <Text style={{ fontSize: 13, color: theme.textSecondary, marginTop: 2 }}>
                 Total {assetsList.length} unit radio komunikasi terdaftar
               </Text>
             </View>
 
-            <AnimatedPressable
-              onPress={handleOpenAddAsset}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                backgroundColor: theme.primary,
-                paddingHorizontal: 14,
-                paddingVertical: 9,
-                borderRadius: 12,
-                gap: 6,
-                shadowColor: theme.primary,
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.3,
-                shadowRadius: 8,
-                elevation: 4,
-              }}
-            >
-              <Ionicons name="add-circle" size={18} color="#FFFFFF" />
-              <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 13 }}>
-                Tambah HT
-              </Text>
-            </AnimatedPressable>
+            {isAdmin && (
+              <AnimatedPressable
+                onPress={handleOpenAddAsset}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor: theme.primary,
+                  paddingHorizontal: 14,
+                  paddingVertical: 9,
+                  borderRadius: 12,
+                  gap: 6,
+                  shadowColor: theme.primary,
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 8,
+                  elevation: 4,
+                }}
+              >
+                <Ionicons name="add-circle" size={18} color="#FFFFFF" />
+                <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 13 }}>
+                  Tambah HT
+                </Text>
+              </AnimatedPressable>
+            )}
           </View>
           {/* Proportional Segmented Filter Bar with Color-Coded Active States */}
           <View
@@ -650,6 +656,7 @@ export default function AdminAssetsScreen() {
             renderItem={({ item }) => (
               <AssetListItem
                 item={item}
+                isAdmin={isAdmin}
                 onOpenQR={() => setQrModalAsset(item)}
                 onOverride={() => {
                   setOverrideAsset(item);
