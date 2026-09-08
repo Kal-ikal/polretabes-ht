@@ -262,7 +262,7 @@ export default function HomeScreen() {
           .select("*, asset:assets(*)")
           .in("asset_id", assetIds)
           .eq("action", "BORROW")
-          .eq("status", "APPROVED")
+          .in("status", ["APPROVED", "ACTIVE"])
           .order("created_at", { ascending: false });
 
         if (profile?.id) {

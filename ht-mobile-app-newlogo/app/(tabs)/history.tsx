@@ -570,16 +570,34 @@ export default function HistoryScreen() {
     return result;
   }, [rawTransactions]);
 
+  // Transaksi BORROW TERBARU untuk tiap aset yang SAAT INI berstatus
+  // 'dipinjam'. Perlu karena scan_to_borrow mengubah status transaksi jadi
+  // 'ACTIVE' setelah discan fisik (bukan tetap 'APPROVED'), dan satu unit
+  // yang sudah dipinjam-kembalikan berkali-kali punya banyak baris BORROW
+  // lama -- tanpa dedup ini, hitungan/filter "Dipinjam" bisa salah (baik
+  // kelewatan unit yang sudah ACTIVE, maupun dobel-hitung riwayat lama).
+  const activeBorrowTxByAssetId = useMemo(() => {
+    const map = new Map<string, Transaction>();
+    for (const tx of rawTransactions) {
+      if (tx.action !== "BORROW" || (tx.asset?.status || "").toLowerCase() !== "dipinjam") continue;
+      const existing = map.get(tx.asset_id);
+      if (!existing || new Date(tx.created_at).getTime() > new Date(existing.created_at).getTime()) {
+        map.set(tx.asset_id, tx);
+      }
+    }
+    return map;
+  }, [rawTransactions]);
+
   // Metrics calculation
   const metrics = useMemo(() => {
     const total = rawTransactions.length;
     const pending = rawTransactions.filter((i) => i.status === "PENDING").length;
-    const borrowApproved = rawTransactions.filter((i) => i.action === "BORROW" && i.status === "APPROVED").length;
+    const borrowApproved = activeBorrowTxByAssetId.size;
     const returnApproved = rawTransactions.filter((i) => i.action === "RETURN" && i.status === "APPROVED").length;
     const rejected = rawTransactions.filter((i) => i.status === "REJECTED").length;
 
     return { total, pending, borrowApproved, returnApproved, rejected };
-  }, [rawTransactions]);
+  }, [rawTransactions, activeBorrowTxByAssetId]);
 
   // Filtered Grouped Items
   const filteredGroups = useMemo(() => {
@@ -587,7 +605,7 @@ export default function HistoryScreen() {
       const main = group.mainTx;
       let matchesFilter = true;
 
-      if (quickFilter === "BORROW") matchesFilter = main.action === "BORROW" && main.status === "APPROVED";
+      if (quickFilter === "BORROW") matchesFilter = activeBorrowTxByAssetId.get(main.asset_id)?.id === main.id;
       else if (quickFilter === "RETURN") matchesFilter = main.action === "RETURN" && main.status === "APPROVED";
       else if (quickFilter === "PENDING") matchesFilter = main.status === "PENDING";
       else if (quickFilter === "REJECTED") matchesFilter = main.status === "REJECTED";
@@ -609,7 +627,7 @@ export default function HistoryScreen() {
         (item.asset?.serial_number || "").toLowerCase().includes(q)
       );
     });
-  }, [groupedTransactions, quickFilter, searchQuery]);
+  }, [groupedTransactions, quickFilter, searchQuery, activeBorrowTxByAssetId]);
 
   // Share Receipt Generator
   const formatReceiptForSharing = (group: GroupedTransaction) => {

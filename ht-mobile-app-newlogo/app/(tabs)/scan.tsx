@@ -299,10 +299,15 @@ export default function ScanScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchAssetsCatalog();
-      setScanned(false);
-      setLoading(false);
-      setErrorMsg(null);
-      isProcessingRef.current = false;
+      // Jangan reset guard scan kalau masih ada proses berjalan (mis. fokus
+      // layar sempat berubah sebentar akibat lag) -- reset paksa di sini
+      // bisa membuka celah scan/permintaan berikutnya diproses dobel
+      // sebelum yang pertama selesai.
+      if (!isProcessingRef.current) {
+        setScanned(false);
+        setLoading(false);
+        setErrorMsg(null);
+      }
     }, [fetchAssetsCatalog])
   );
 
@@ -884,7 +889,12 @@ export default function ScanScreen() {
                   zoom={zoomFactor}
                   enableTorch={enableTorch}
                   barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-                  onBarcodeScanned={handleBarcodeScanned}
+                  // Matikan callback sepenuhnya selagi satu scan masih
+                  // diproses -- kamera tetap mendeteksi QR beberapa kali per
+                  // detik, dan kalau jaringan sedang lambat/lag, callback
+                  // yang tidak dihentikan bisa memicu pemrosesan berulang
+                  // untuk fisik-scan yang sama sebelum request pertama selesai.
+                  onBarcodeScanned={scanned || loading ? undefined : handleBarcodeScanned}
                 />
               ) : (
                 <View style={{ flex: 1, backgroundColor: "#000000" }} />
