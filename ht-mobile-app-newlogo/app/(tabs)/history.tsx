@@ -23,6 +23,8 @@ import { SkeletonCard } from "@/components/SkeletonCard";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { StatusBadge } from "@/components/StatusBadge";
 import { LoanBatchQRModal } from "@/components/LoanBatchQRModal";
+import { DocumentViewerModal } from "@/components/DocumentViewerModal";
+import { formatFullDateTimeId, formatShortDateTimeId, getRemainingTimeStatus } from "@/lib/dateUtils";
 import type { Transaction, TransactionStatus } from "@/types/database";
 
 interface AssetStateLog {
@@ -258,6 +260,56 @@ const HistoryListItem = ({ group, isAdmin, onPress, onOpenQR }: HistoryListItemP
             </Text>
           </View>
         </View>
+
+        {/* Due Date & Document Badges */}
+        {item.due_date && (() => {
+          const rem = getRemainingTimeStatus(item.due_date);
+          const isOver = rem?.isOverdue;
+          return (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 5,
+                marginTop: 8,
+                backgroundColor: isOver
+                  ? "rgba(239, 68, 68, 0.12)"
+                  : rem?.urgentLevel === "warning"
+                  ? "rgba(245, 158, 11, 0.12)"
+                  : "rgba(14, 165, 233, 0.1)",
+                borderColor: isOver ? "#ef4444" : rem?.urgentLevel === "warning" ? "#f59e0b" : "#0284c7",
+                borderWidth: 1,
+                paddingHorizontal: 8,
+                paddingVertical: 3.5,
+                borderRadius: 7,
+                alignSelf: "flex-start",
+              }}
+            >
+              <Ionicons
+                name={isOver ? "alert-circle" : "alarm-outline"}
+                size={12}
+                color={isOver ? "#ef4444" : rem?.urgentLevel === "warning" ? "#d97706" : "#0284c7"}
+              />
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: "700",
+                  color: isOver ? "#ef4444" : rem?.urgentLevel === "warning" ? "#d97706" : "#0284c7",
+                }}
+              >
+                {rem?.text} (Batas: {formatShortDateTimeId(item.due_date)})
+              </Text>
+            </View>
+          );
+        })()}
+        {item.document_url && (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4, alignSelf: "flex-start" }}>
+            <Ionicons name="document-text" size={12} color="#10b981" />
+            <Text style={{ fontSize: 11, fontWeight: "600", color: "#10b981" }}>
+              Surat Resmi Terlampir
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Card Footer Bar */}
@@ -373,6 +425,11 @@ export default function HistoryScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedTxGroup, setSelectedTxGroup] = useState<GroupedTransaction | null>(null);
   const [qrModalGroup, setQrModalGroup] = useState<GroupedTransaction | null>(null);
+  const [viewDocModal, setViewDocModal] = useState<{ visible: boolean; url: string; name: string }>({
+    visible: false,
+    url: "",
+    name: "",
+  });
 
   const loadData = useCallback(async (isInitial = false) => {
     if (isInitial) setLoading(true);
@@ -603,6 +660,14 @@ export default function HistoryScreen() {
 
     if (tx.rejection_reason) {
       details += `\n• Alasan Tolak: "${tx.rejection_reason}"`;
+    }
+
+    if (tx.due_date) {
+      details += `\n• Batas Pengembalian: ${new Date(tx.due_date).toLocaleString("id-ID", { dateStyle: "full", timeStyle: "short" })} WIB`;
+    }
+
+    if (tx.document_name) {
+      details += `\n• Dokumen Resmi: ${tx.document_name}`;
     }
 
     details += `\n\n*Waktu & Referensi:*
@@ -1086,12 +1151,93 @@ _Dokumentasi Resmi Sistem Logistik HT Polrestabes_`;
                         </View>
                       )}
 
+                      {selectedTxGroup.mainTx.reviewed_at && (
+                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                          <Text style={{ fontSize: 12.5, color: theme.textSecondary }}>Waktu Disetujui</Text>
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: "#22C55E" }}>
+                            {formatFullDateTimeId(selectedTxGroup.mainTx.reviewed_at)}
+                          </Text>
+                        </View>
+                      )}
+
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                        <Text style={{ fontSize: 12.5, color: theme.textSecondary }}>Kondisi Fisik</Text>
+                        <Text style={{ fontSize: 12.5, fontWeight: "700", color: selectedTxGroup.mainTx.condition === "rusak" ? "#EF4444" : "#22C55E" }}>
+                          {selectedTxGroup.mainTx.condition === "rusak" ? "Rusak / Ada Kendala" : "Baik"}
+                        </Text>
+                      </View>
+
+                      {selectedTxGroup.mainTx.notes && (
+                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+                          <Text style={{ fontSize: 12.5, color: theme.textSecondary, marginRight: 8 }}>Catatan Dinas</Text>
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: theme.textPrimary, flex: 1, textAlign: "right" }}>
+                            {selectedTxGroup.mainTx.notes}
+                          </Text>
+                        </View>
+                      )}
+
                       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                         <Text style={{ fontSize: 12.5, color: theme.textSecondary }}>Waktu Pengajuan</Text>
                         <Text style={{ fontSize: 12, fontWeight: "600", color: theme.textMuted }}>
-                          {new Date(selectedTxGroup.mainTx.created_at).toLocaleString("id-ID")} WIB
+                          {formatFullDateTimeId(selectedTxGroup.mainTx.created_at)}
                         </Text>
                       </View>
+
+                      {selectedTxGroup.mainTx.due_date && (() => {
+                        const rem = getRemainingTimeStatus(selectedTxGroup.mainTx.due_date);
+                        const isOver = rem?.isOverdue;
+                        return (
+                          <View style={{ gap: 4 }}>
+                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                              <Text style={{ fontSize: 12.5, color: theme.textSecondary }}>Batas Waktu Pengembalian</Text>
+                              <Text style={{ fontSize: 12, fontWeight: "700", color: "#0284c7" }}>
+                                {formatFullDateTimeId(selectedTxGroup.mainTx.due_date)}
+                              </Text>
+                            </View>
+                            <View
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 6,
+                                alignSelf: "flex-end",
+                                backgroundColor: isOver ? "rgba(239, 68, 68, 0.12)" : rem?.urgentLevel === "warning" ? "rgba(245, 158, 11, 0.12)" : "rgba(14, 165, 233, 0.1)",
+                                borderColor: isOver ? "#ef4444" : rem?.urgentLevel === "warning" ? "#f59e0b" : "#0284c7",
+                                borderWidth: 1,
+                                paddingHorizontal: 8,
+                                paddingVertical: 3,
+                                borderRadius: 6,
+                              }}
+                            >
+                              <Ionicons name={isOver ? "alert-circle" : "alarm-outline"} size={12} color={isOver ? "#ef4444" : rem?.urgentLevel === "warning" ? "#d97706" : "#0284c7"} />
+                              <Text style={{ fontSize: 10.5, fontWeight: "700", color: isOver ? "#ef4444" : rem?.urgentLevel === "warning" ? "#d97706" : "#0284c7" }}>
+                                Status: {rem?.text}
+                              </Text>
+                            </View>
+                          </View>
+                        );
+                      })()}
+
+                      {selectedTxGroup.mainTx.document_url && (
+                        <AnimatedPressable
+                          onPress={() => setViewDocModal({ visible: true, url: selectedTxGroup.mainTx.document_url!, name: selectedTxGroup.mainTx.document_name || "Surat_Resmi" })}
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 6,
+                            paddingVertical: 8,
+                            paddingHorizontal: 10,
+                            backgroundColor: "rgba(16, 185, 129, 0.12)",
+                            borderRadius: 8,
+                            marginTop: 4,
+                          }}
+                        >
+                          <Ionicons name="document-text" size={16} color="#10b981" />
+                          <Text style={{ fontSize: 12, fontWeight: "700", color: "#10b981", flex: 1 }}>
+                            Lihat Surat Resmi Terlampir
+                          </Text>
+                          <Ionicons name="eye-outline" size={14} color="#10b981" />
+                        </AnimatedPressable>
+                      )}
                     </View>
                   </View>
                 </ScrollView>
@@ -1153,6 +1299,15 @@ _Dokumentasi Resmi Sistem Logistik HT Polrestabes_`;
           group={qrModalGroup}
           onClose={() => setQrModalGroup(null)}
           onRefresh={() => loadData(false)}
+        />
+
+        {/* Official Document Viewer Modal */}
+        <DocumentViewerModal
+          visible={viewDocModal.visible}
+          onClose={() => setViewDocModal((prev) => ({ ...prev, visible: false }))}
+          documentUrl={viewDocModal.url}
+          documentName={viewDocModal.name}
+          title="Surat Perintah / Resmi (Lampiran)"
         />
       </View>
     </LinearGradient>

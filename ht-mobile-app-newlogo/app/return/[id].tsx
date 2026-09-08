@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { View, Text, ActivityIndicator, TextInput, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -8,7 +8,11 @@ import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/hooks/useTheme";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { AppBottomSheet } from "@/components/AppBottomSheet";
+import { StatusBadge } from "@/components/StatusBadge";
+import { DocumentViewerModal } from "@/components/DocumentViewerModal";
 import { getFriendlyErrorMessage } from "@/lib/errorHandler";
+import { formatFullDateTimeId, getRemainingTimeStatus } from "@/lib/dateUtils";
+import type { Transaction } from "@/types/database";
 
 export default function ReturnScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -16,6 +20,12 @@ export default function ReturnScreen() {
   const theme = useTheme();
   const [selectedStatus, setSelectedStatus] = useState<"Tersedia" | "Rusak">("Tersedia");
   const [notes, setNotes] = useState("");
+  const [activeTx, setActiveTx] = useState<Transaction | null>(null);
+  const [viewDocModal, setViewDocModal] = useState<{ visible: boolean; url: string; name: string }>({
+    visible: false,
+    url: "",
+    name: "",
+  });
   const [submitting, setSubmitting] = useState(false);
   const [modalConfig, setModalConfig] = useState<{
     visible: boolean;
@@ -31,6 +41,22 @@ export default function ReturnScreen() {
     icon: "📋",
     onConfirm: () => {},
   });
+
+  // Load Active Borrowing Transaction for Due Date Inspection
+  useEffect(() => {
+    if (!id) return;
+    supabase
+      .from("transactions")
+      .select("*, asset:assets(*)")
+      .eq("asset_id", id)
+      .eq("action", "BORROW")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) setActiveTx(data as Transaction);
+      });
+  }, [id]);
 
   function triggerSubmit() {
     if (!id) return;
@@ -164,10 +190,87 @@ export default function ReturnScreen() {
               adjustsFontSizeToFit
               minimumFontScale={0.85}
               className="text-sm text-center text-slate-500 dark:text-slate-400 mb-5"
-              style={{ fontSize: 14, textAlign: "center", color: theme.textSecondary, marginBottom: 20 }}
+              style={{ fontSize: 14, textAlign: "center", color: theme.textSecondary, marginBottom: 14 }}
             >
               Pilih kondisi unit HT saat dikembalikan
             </Text>
+
+            {/* Due Date & Peminjam Info Banner */}
+            {activeTx && (
+              <View
+                style={{
+                  backgroundColor: theme.isDark ? "rgba(255, 255, 255, 0.04)" : "#F8FAFC",
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: theme.cardBorder,
+                  padding: 12,
+                  marginBottom: 16,
+                  gap: 6,
+                }}
+              >
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: theme.textPrimary }}>
+                    Peminjam: {activeTx.borrower_name || "Petugas"}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: theme.textSecondary }}>
+                    Kesatuan: {activeTx.kesatuan || "-"}
+                  </Text>
+                </View>
+
+                {activeTx.due_date && (() => {
+                  const rem = getRemainingTimeStatus(activeTx.due_date);
+                  const isOver = rem?.isOverdue;
+                  return (
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 6,
+                        backgroundColor: isOver ? "rgba(239, 68, 68, 0.15)" : "rgba(34, 197, 94, 0.15)",
+                        borderColor: isOver ? "#ef4444" : "#22c55e",
+                        borderWidth: 1,
+                        padding: 8,
+                        borderRadius: 8,
+                      }}
+                    >
+                      <Ionicons
+                        name={isOver ? "alert-circle" : "checkmark-circle"}
+                        size={16}
+                        color={isOver ? "#ef4444" : "#22c55e"}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 11.5, fontWeight: "800", color: isOver ? "#ef4444" : "#15803d" }}>
+                          {isOver ? "⚠️ KETERLAMBATAN PENGEMBALIAN" : "✅ PENGEMBALIAN TEPAT WAKTU"}
+                        </Text>
+                        <Text style={{ fontSize: 11, color: isOver ? "#b91c1c" : "#166534", marginTop: 1 }}>
+                          {rem?.label} • Batas: {formatFullDateTimeId(activeTx.due_date)}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })()}
+
+                {activeTx.document_url && (
+                  <AnimatedPressable
+                    onPress={() => setViewDocModal({ visible: true, url: activeTx.document_url!, name: activeTx.document_name || "Surat_Resmi" })}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6,
+                      backgroundColor: "rgba(16, 185, 129, 0.12)",
+                      padding: 6,
+                      borderRadius: 6,
+                      alignSelf: "flex-start",
+                    }}
+                  >
+                    <Ionicons name="document-text" size={14} color="#10b981" />
+                    <Text style={{ fontSize: 11.5, fontWeight: "700", color: "#10b981" }}>
+                      Lihat Surat Resmi Terlampir
+                    </Text>
+                  </AnimatedPressable>
+                )}
+              </View>
+            )}
 
             {/* Condition Toggle Buttons */}
             <View style={{ gap: 12, marginBottom: 16 }}>
@@ -323,7 +426,7 @@ export default function ReturnScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Bottom Sheet Modal */}
+      {/* Confirmation Bottom Sheet */}
       <AppBottomSheet
         visible={modalConfig.visible}
         onClose={() => setModalConfig((prev) => ({ ...prev, visible: false }))}
@@ -332,6 +435,15 @@ export default function ReturnScreen() {
         message={modalConfig.message}
         icon={modalConfig.icon}
         isDanger={modalConfig.isDanger}
+      />
+
+      {/* Official Document Viewer Modal */}
+      <DocumentViewerModal
+        visible={viewDocModal.visible}
+        onClose={() => setViewDocModal((prev) => ({ ...prev, visible: false }))}
+        documentUrl={viewDocModal.url}
+        documentName={viewDocModal.name}
+        title="Surat Perintah / Resmi (Peminjaman)"
       />
     </LinearGradient>
   );

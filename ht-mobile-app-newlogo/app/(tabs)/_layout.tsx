@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Redirect, Tabs } from "expo-router";
 import { ActivityIndicator, View, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -122,7 +122,7 @@ export default function TabsLayout() {
             fontSize: 10,
             fontWeight: "800",
           },
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ color, focused }: { color: any; focused: boolean }) => (
             <Ionicons
               name={
                 isAdmin
@@ -147,7 +147,7 @@ export default function TabsLayout() {
         options={{
           title: "Scan QR",
           href: isAdmin ? null : "/(tabs)/scan",
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ color, focused }: { color: any; focused: boolean }) => (
             <Ionicons
               name={focused ? "qr-code" : "qr-code-outline"}
               size={22}
@@ -164,7 +164,7 @@ export default function TabsLayout() {
         options={{
           title: "Kelola Aset",
           href: isAdmin ? "/(tabs)/assets" : null,
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ color, focused }: { color: any; focused: boolean }) => (
             <Ionicons
               name={focused ? "cube" : "cube-outline"}
               size={22}
@@ -180,7 +180,7 @@ export default function TabsLayout() {
         name="history"
         options={{
           title: isAdmin ? "Audit Log" : "Riwayat",
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ color, focused }: { color: any; focused: boolean }) => (
             <Ionicons
               name={
                 isAdmin
@@ -204,7 +204,7 @@ export default function TabsLayout() {
         name="profile"
         options={{
           title: isAdmin ? "Profil Admin" : "Profil Saya",
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ color, focused }: { color: any; focused: boolean }) => (
             <Ionicons
               name={
                 isAdmin

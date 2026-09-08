@@ -19,6 +19,8 @@ import { useAppTheme } from "@/context/ThemeContext";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { StatusBadge } from "@/components/StatusBadge";
 import { AppBottomSheet } from "@/components/AppBottomSheet";
+import { DocumentViewerModal } from "@/components/DocumentViewerModal";
+import { formatFullDateTimeId, formatShortDateTimeId, getRemainingTimeStatus } from "@/lib/dateUtils";
 import type { Transaction, Asset } from "@/types/database";
 
 export default function LoanQRScreen() {
@@ -32,6 +34,11 @@ export default function LoanQRScreen() {
   const [loading, setLoading] = useState(true);
   const [txItems, setTxItems] = useState<Transaction[]>([]);
   const [processingAssetId, setProcessingAssetId] = useState<string | null>(null);
+  const [viewDocModal, setViewDocModal] = useState<{ visible: boolean; url: string; name: string }>({
+    visible: false,
+    url: "",
+    name: "",
+  });
   const [toastConfig, setToastConfig] = useState<{
     visible: boolean;
     title: string;
@@ -44,7 +51,7 @@ export default function LoanQRScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace("/admin");
+      router.replace("/(tabs)");
     }
   };
 
@@ -440,9 +447,67 @@ export default function LoanQRScreen() {
                   <View>
                     <Text style={{ fontSize: 11, color: theme.textMuted }}>Waktu Pengajuan</Text>
                     <Text style={{ fontSize: 12, fontWeight: "600", color: theme.textSecondary }}>
-                      {new Date(mainTx.created_at).toLocaleString("id-ID")} WIB
+                      {formatFullDateTimeId(mainTx.created_at)}
                     </Text>
                   </View>
+
+                  {mainTx.reviewer && (
+                    <View>
+                      <Text style={{ fontSize: 11, color: theme.textMuted }}>Verifikator Admin</Text>
+                      <Text style={{ fontSize: 12.5, fontWeight: "700", color: "#22C55E" }}>
+                        {mainTx.reviewer.full_name}
+                      </Text>
+                    </View>
+                  )}
+
+                  {mainTx.reviewed_at && (
+                    <View>
+                      <Text style={{ fontSize: 11, color: theme.textMuted }}>Waktu Disetujui</Text>
+                      <Text style={{ fontSize: 12, fontWeight: "600", color: "#22C55E" }}>
+                        {formatFullDateTimeId(mainTx.reviewed_at)}
+                      </Text>
+                    </View>
+                  )}
+
+                  {mainTx.due_date && (() => {
+                    const rem = getRemainingTimeStatus(mainTx.due_date);
+                    const isOver = rem?.isOverdue;
+                    return (
+                      <View style={{ width: "100%", marginTop: 4, flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6, backgroundColor: isOver ? "rgba(239, 68, 68, 0.12)" : rem?.urgentLevel === "warning" ? "rgba(245, 158, 11, 0.12)" : "rgba(14, 165, 233, 0.1)", borderColor: isOver ? "#ef4444" : rem?.urgentLevel === "warning" ? "#f59e0b" : "#0284c7", borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          <Ionicons name={isOver ? "alert-circle" : "alarm-outline"} size={14} color={isOver ? "#ef4444" : rem?.urgentLevel === "warning" ? "#d97706" : "#0284c7"} />
+                          <Text style={{ fontSize: 11.5, fontWeight: "700", color: isOver ? "#ef4444" : rem?.urgentLevel === "warning" ? "#d97706" : "#0284c7" }}>
+                            Batas: {formatFullDateTimeId(mainTx.due_date)}
+                          </Text>
+                        </View>
+                        <Text style={{ fontSize: 11, fontWeight: "800", color: isOver ? "#ef4444" : rem?.urgentLevel === "warning" ? "#d97706" : "#0284c7" }}>
+                          Status: {rem?.text}
+                        </Text>
+                      </View>
+                    );
+                  })()}
+
+                  {mainTx.document_url && (
+                    <AnimatedPressable
+                      onPress={() => setViewDocModal({ visible: true, url: mainTx.document_url!, name: mainTx.document_name || "Surat_Resmi" })}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 6,
+                        marginTop: 4,
+                        paddingVertical: 6,
+                        paddingHorizontal: 10,
+                        backgroundColor: "rgba(16, 185, 129, 0.12)",
+                        borderRadius: 8,
+                        alignSelf: "flex-start",
+                      }}
+                    >
+                      <Ionicons name="document-text" size={14} color="#10b981" />
+                      <Text style={{ fontSize: 11.5, fontWeight: "700", color: "#10b981" }}>
+                        Lihat Lampiran Surat Resmi
+                      </Text>
+                    </AnimatedPressable>
+                  )}
                 </View>
               </View>
             )}
@@ -662,6 +727,15 @@ export default function LoanQRScreen() {
             confirmText="OK"
           />
         )}
+
+        {/* Official Document Viewer Modal */}
+        <DocumentViewerModal
+          visible={viewDocModal.visible}
+          onClose={() => setViewDocModal((prev) => ({ ...prev, visible: false }))}
+          documentUrl={viewDocModal.url}
+          documentName={viewDocModal.name}
+          title="Surat Perintah / Resmi (Lampiran)"
+        />
       </View>
     </LinearGradient>
   );

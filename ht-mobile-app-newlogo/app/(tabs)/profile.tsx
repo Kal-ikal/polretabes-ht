@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -570,6 +570,9 @@ export default function ProfileScreen() {
           paddingHorizontal: 20,
           paddingTop: 16,
           paddingBottom: 40,
+          maxWidth: 840,
+          width: "100%",
+          alignSelf: "center",
         }}
         keyboardShouldPersistTaps="handled"
       >

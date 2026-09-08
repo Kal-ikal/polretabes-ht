@@ -41,10 +41,26 @@ export interface Transaction {
   notes: string | null;
   batch_id?: string | null;
   batch_code?: string | null;
+  due_date?: string | null;
+  document_url?: string | null;
+  document_name?: string | null;
+  cancelled_at?: string | null;
+  cancel_reason?: string | null;
   created_at: string;
+  updated_at?: string;
   // Relationship joins
   asset?: Asset;
   reviewer?: Profile;
+}
+
+export interface LoanDurationPreset {
+  id: string;
+  label: string;
+  duration_hours: number;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at?: string;
 }
 
 export type Database = {
@@ -68,6 +84,12 @@ export type Database = {
         Update: Partial<Transaction>;
         Relationships: [];
       };
+      loan_duration_presets: {
+        Row: LoanDurationPreset;
+        Insert: Partial<LoanDurationPreset>;
+        Update: Partial<LoanDurationPreset>;
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -82,6 +104,9 @@ export type Database = {
           p_kesatuan?: string | null;
           p_condition?: string | null;
           p_notes?: string | null;
+          p_due_date?: string | null;
+          p_document_url?: string | null;
+          p_document_name?: string | null;
         };
         Returns: string;
       };
@@ -94,6 +119,9 @@ export type Database = {
           p_kesatuan?: string | null;
           p_condition?: string | null;
           p_notes?: string | null;
+          p_due_date?: string | null;
+          p_document_url?: string | null;
+          p_document_name?: string | null;
         };
         Returns: any;
       };

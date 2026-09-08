@@ -309,11 +309,31 @@ export default function AdminAssetsScreen() {
 
     setOverrideSubmitting(true);
     try {
-      const { error } = await supabase.rpc("admin_override_asset_status", {
+      let { error } = await supabase.rpc("admin_override_asset_status", {
         p_asset_id: overrideAsset.id,
         p_new_status: overrideStatus,
         p_reason: overrideReason.trim() || `Override manual ke ${overrideStatus} oleh admin`,
       });
+
+      if (error) {
+        // Direct table fallback if RPC fails
+        const { error: directErr } = await supabase
+          .from("assets")
+          .update({ status: overrideStatus, updated_at: new Date().toISOString() })
+          .eq("id", overrideAsset.id);
+
+        if (!directErr) {
+          error = null;
+          try {
+            await supabase.from("asset_state_logs").insert({
+              asset_id: overrideAsset.id,
+              from_state: overrideAsset.status,
+              to_state: overrideStatus,
+              reason: `Admin Override Status: ${overrideReason.trim() || "Manual Admin"}`,
+            });
+          } catch {}
+        }
+      }
 
       setOverrideSubmitting(false);
 
@@ -368,7 +388,7 @@ export default function AdminAssetsScreen() {
 
   return (
     <LinearGradient colors={theme.backgroundGradient} style={{ flex: 1 }}>
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, maxWidth: 840, width: "100%", alignSelf: "center" }}>
         {/* Header Stats Bar */}
         <View
           style={{

@@ -21,6 +21,9 @@ import { useTheme } from "@/hooks/useTheme";
 import { StatusBadge } from "@/components/StatusBadge";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { AppBottomSheet } from "@/components/AppBottomSheet";
+import { DueDatePicker } from "@/components/DueDatePicker";
+import { OfficialLetterUploader, type OfficialDocumentData } from "@/components/OfficialLetterUploader";
+import { formatFullDateTimeId } from "@/lib/dateUtils";
 import { getFriendlyErrorMessage } from "@/lib/errorHandler";
 import type { Asset, AssetStatus } from "@/types/database";
 
@@ -208,6 +211,8 @@ export default function ScanScreen() {
   const [borrowerNrp, setBorrowerNrp] = useState("");
   const [kesatuan, setKesatuan] = useState("");
   const [batchNotes, setBatchNotes] = useState("");
+  const [batchDueDate, setBatchDueDate] = useState<string | null>(null);
+  const [batchOfficialDoc, setBatchOfficialDoc] = useState<OfficialDocumentData | null>(null);
   const [submittingBatch, setSubmittingBatch] = useState(false);
 
   // Feedback Bottom Sheet Toast
@@ -576,6 +581,28 @@ export default function ScanScreen() {
       return;
     }
 
+    if (!batchDueDate) {
+      setToastConfig({
+        visible: true,
+        title: "Tentukan Batas Waktu",
+        message: "Batas waktu pengembalian HT untuk batch ini wajib ditentukan.",
+        icon: "⏱️",
+        isDanger: true,
+      });
+      return;
+    }
+
+    if (!batchOfficialDoc) {
+      setToastConfig({
+        visible: true,
+        title: "Surat Resmi Wajib",
+        message: "Surat resmi (Sprint / Surat Perintah / Nota Dinas) wajib dilampirkan sebelum mengajukan peminjaman batch.",
+        icon: "📄",
+        isDanger: true,
+      });
+      return;
+    }
+
     setSubmittingBatch(true);
 
     try {
@@ -589,6 +616,9 @@ export default function ScanScreen() {
         p_borrower_nrp: borrowerNrp.trim(),
         p_kesatuan: kesatuan.trim(),
         p_notes: batchNotes.trim() || null,
+        p_due_date: batchDueDate,
+        p_document_url: batchOfficialDoc?.url || null,
+        p_document_name: batchOfficialDoc?.name || null,
       });
 
       setSubmittingBatch(false);
@@ -1193,52 +1223,80 @@ export default function ScanScreen() {
             elevation: 8,
           }}
         >
-          <View style={{ gap: 2 }}>
+          <View style={{ gap: 2, flex: 1, marginRight: 10 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
               <View
                 style={{
-                  backgroundColor: theme.primary,
+                  backgroundColor: batchSelectedAssets.length > 1 ? theme.primary : "#10B981",
                   paddingHorizontal: 8,
                   paddingVertical: 2,
                   borderRadius: 10,
                 }}
               >
                 <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 12 }}>
-                  {batchSelectedAssets.length} / 50 HT
+                  {batchSelectedAssets.length} HT
                 </Text>
               </View>
               <Text style={{ fontSize: 13, fontWeight: "800", color: theme.textPrimary }}>
-                Batch Peminjaman
+                {batchSelectedAssets.length > 1 ? "Peminjaman Batch" : "Peminjaman Tunggal"}
               </Text>
             </View>
-            <Text style={{ fontSize: 11, color: theme.textSecondary }}>
-              Setiap HT menggunakan QR Code tersendiri.
+            <Text numberOfLines={1} style={{ fontSize: 11, color: theme.textSecondary }}>
+              {batchSelectedAssets.length > 1
+                ? `${batchSelectedAssets.length} unit terpilih untuk dipinjam sekaligus`
+                : `${batchSelectedAssets[0]?.name || "1 unit"} siap diajukan`}
             </Text>
           </View>
 
-          <AnimatedPressable
-            onPress={() => {
-              if (batchSelectedAssets.length < 2) {
-                Alert.alert("Gagal", "Peminjaman Batch minimal 2 unit. Untuk 1 unit, gunakan peminjaman reguler.");
-                return;
-              }
-              setBatchModalVisible(true);
-            }}
-            style={{
-              backgroundColor: theme.primary,
-              paddingVertical: 11,
-              paddingHorizontal: 16,
-              borderRadius: 14,
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <Ionicons name="paper-plane-outline" size={16} color={theme.primaryTextOnButton} />
-            <Text style={{ color: theme.primaryTextOnButton, fontWeight: "800", fontSize: 13.5 }}>
-              Lanjutkan ({batchSelectedAssets.length})
-            </Text>
-          </AnimatedPressable>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            {/* Tombol Batal Pilihan */}
+            <AnimatedPressable
+              onPress={() => {
+                setBatchSelectedAssets([]);
+                setIsBatchMode(false);
+              }}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 12,
+                backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "#F1F5F9",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <Ionicons name="close" size={18} color={theme.textSecondary} />
+            </AnimatedPressable>
+
+            {/* Tombol Aksi: Satuan vs Batch */}
+            <AnimatedPressable
+              onPress={() => {
+                if (batchSelectedAssets.length === 1) {
+                  const targetId = batchSelectedAssets[0].id;
+                  setBatchSelectedAssets([]);
+                  setIsBatchMode(false);
+                  router.push(`/asset/${targetId}`);
+                } else if (batchSelectedAssets.length > 1) {
+                  setBatchModalVisible(true);
+                }
+              }}
+              style={{
+                backgroundColor: theme.primary,
+                paddingVertical: 11,
+                paddingHorizontal: 14,
+                borderRadius: 14,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <Ionicons name="paper-plane-outline" size={16} color={theme.primaryTextOnButton} />
+              <Text style={{ color: theme.primaryTextOnButton, fontWeight: "800", fontSize: 13 }}>
+                {batchSelectedAssets.length > 1
+                  ? `Pinjam Batch (${batchSelectedAssets.length})`
+                  : "Pinjam Unit (1)"}
+              </Text>
+            </AnimatedPressable>
+          </View>
         </View>
       )}
 
@@ -1478,6 +1536,16 @@ export default function ScanScreen() {
                   }}
                 />
               </View>
+
+              {/* Batas Waktu Pengembalian Batch */}
+              <DueDatePicker value={batchDueDate} onChange={setBatchDueDate} />
+
+              {/* Surat Resmi Batch (Wajib) */}
+              <OfficialLetterUploader
+                value={batchOfficialDoc}
+                onChange={setBatchOfficialDoc}
+                isRequired={true}
+              />
 
               {/* Action Submit Button */}
               <AnimatedPressable

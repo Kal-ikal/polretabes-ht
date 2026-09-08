@@ -11,6 +11,10 @@ import { getFriendlyErrorMessage } from "@/lib/errorHandler";
 import { StatusBadge } from "@/components/StatusBadge";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { AppBottomSheet } from "@/components/AppBottomSheet";
+import { DueDatePicker } from "@/components/DueDatePicker";
+import { OfficialLetterUploader, type OfficialDocumentData } from "@/components/OfficialLetterUploader";
+import { DocumentViewerModal } from "@/components/DocumentViewerModal";
+import { formatFullDateTimeId, getRemainingTimeStatus } from "@/lib/dateUtils";
 import type { Asset, Transaction } from "@/types/database";
 
 const KESATUAN_OPTIONS = [
@@ -39,6 +43,13 @@ export default function AssetDetailScreen() {
   const [borrowerName, setBorrowerName] = useState(profile?.full_name || "");
   const [borrowerNrp, setBorrowerNrp] = useState(profile?.nrp || "");
   const [kesatuan, setKesatuan] = useState("");
+  const [dueDate, setDueDate] = useState<string | null>(null);
+  const [officialDoc, setOfficialDoc] = useState<OfficialDocumentData | null>(null);
+  const [viewDocModal, setViewDocModal] = useState<{ visible: boolean; url: string; name: string }>({
+    visible: false,
+    url: "",
+    name: "",
+  });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -87,10 +98,28 @@ export default function AssetDetailScreen() {
         .limit(1)
         .maybeSingle();
 
-      if (latestTx) {
+      const isTxPending =
+        latestTx &&
+        latestTx.action === "BORROW" &&
+        latestTx.status === "PENDING" &&
+        !latestTx.cancelled_at &&
+        (assetData?.status || "").toLowerCase() === "tersedia";
+
+      const isTxApprovedWaiting =
+        latestTx &&
+        latestTx.action === "BORROW" &&
+        latestTx.status === "APPROVED" &&
+        !latestTx.cancelled_at &&
+        (assetData?.status || "").toLowerCase() === "tersedia";
+
+      const isTxActiveBorrow =
+        latestTx &&
+        (assetData?.status || "").toLowerCase() === "dipinjam";
+
+      if (latestTx && (isTxPending || isTxApprovedWaiting || isTxActiveBorrow)) {
         setActiveTx(latestTx as Transaction);
 
-        // If part of a batch, fetch all sibling transactions in the same batch
+        // If part of an active batch, fetch all sibling transactions in the same batch
         if (latestTx.batch_id) {
           const { data: batchTxs } = await supabase
             .from("transactions")
@@ -98,39 +127,33 @@ export default function AssetDetailScreen() {
             .eq("batch_id", latestTx.batch_id)
             .order("created_at", { ascending: true });
 
-          if (batchTxs) {
+          if (batchTxs && batchTxs.length > 1) {
             setBatchSiblingTxs(batchTxs as Transaction[]);
+          } else {
+            setBatchSiblingTxs([]);
           }
         } else {
           setBatchSiblingTxs([]);
         }
+      } else {
+        // Asset is available and NOT currently in any active loan or pending request
+        setActiveTx(null);
+        setBatchSiblingTxs([]);
       }
 
       // 3. Check if there's an active PENDING borrow request for this unit
-      if (
-        latestTx &&
-        latestTx.action === "BORROW" &&
-        latestTx.status === "PENDING" &&
-        !latestTx.cancelled_at &&
-        (assetData?.status || "").toLowerCase() === "tersedia"
-      ) {
+      if (isTxPending) {
         setPendingLoanInfo({
           isPending: true,
-          borrowerName: latestTx.borrower_name || "Petugas Lain",
-          kesatuan: latestTx.kesatuan || "",
+          borrowerName: latestTx!.borrower_name || "Petugas Lain",
+          kesatuan: latestTx!.kesatuan || "",
         });
       } else {
         setPendingLoanInfo({ isPending: false });
       }
 
       // 4. Check if there's an APPROVED borrow awaiting physical handover
-      if (
-        latestTx &&
-        latestTx.action === "BORROW" &&
-        latestTx.status === "APPROVED" &&
-        !latestTx.cancelled_at &&
-        (assetData?.status || "").toLowerCase() === "tersedia"
-      ) {
+      if (isTxApprovedWaiting) {
         setApprovedAwaitingTx(latestTx as Transaction);
       } else {
         setApprovedAwaitingTx(null);
@@ -257,10 +280,32 @@ export default function AssetDetailScreen() {
       return;
     }
 
+    if (!dueDate) {
+      setModalConfig({
+        visible: true,
+        title: "Tentukan Batas Waktu",
+        message: "Batas waktu pengembalian HT wajib ditentukan.",
+        icon: "⏱️",
+        onConfirm: () => {},
+      });
+      return;
+    }
+
+    if (!officialDoc) {
+      setModalConfig({
+        visible: true,
+        title: "Surat Resmi Wajib",
+        message: "Surat resmi (Sprint / Surat Perintah / Nota Dinas) wajib dilampirkan sebelum mengajukan peminjaman.",
+        icon: "📄",
+        onConfirm: () => {},
+      });
+      return;
+    }
+
     setModalConfig({
       visible: true,
-      title: "Konfirmasi Peminjaman",
-      message: `Proses pengajuan peminjaman unit ${asset.name} untuk ${borrowerName.trim()} (${kesatuan.trim()})?`,
+      title: "Konfirmasi Peminjaman Tunggal (1 Unit)",
+      message: `Proses pengajuan peminjaman 1 unit ${asset.name} (${asset.code}) untuk ${borrowerName.trim()} (${kesatuan.trim()}) dengan batas waktu sampai ${formatFullDateTimeId(dueDate)}?`,
       icon: "📻",
       onConfirm: executeSubmit,
     });
@@ -342,6 +387,9 @@ export default function AssetDetailScreen() {
         p_borrower_name: borrowerName.trim(),
         p_borrower_nrp: borrowerNrp.trim(),
         p_kesatuan: kesatuan.trim(),
+        p_due_date: dueDate,
+        p_document_url: officialDoc?.url || null,
+        p_document_name: officialDoc?.name || null,
       });
 
       if (rpcError) {
@@ -359,6 +407,11 @@ export default function AssetDetailScreen() {
           status: "PENDING",
           condition: "baik",
           notes: null,
+          batch_id: null,
+          batch_code: null,
+          due_date: dueDate,
+          document_url: officialDoc?.url || null,
+          document_name: officialDoc?.name || null,
           created_at: nowIso,
           updated_at: nowIso,
         });
@@ -386,7 +439,7 @@ export default function AssetDetailScreen() {
       setModalConfig({
         visible: true,
         title: "Pengajuan Terkirim! ⏳",
-        message: `Pengajuan peminjaman unit ${asset?.name} (${asset?.code}) untuk ${borrowerName.trim()} (${kesatuan.trim()}) berhasil dikirim. Menunggu persetujuan Admin sebelum unit siap di-scan untuk serah terima fisik.`,
+        message: `Pengajuan peminjaman tunggal 1 unit HT ${asset?.name} (${asset?.code}) untuk ${borrowerName.trim()} (${kesatuan.trim()}) berhasil dikirim. Menunggu persetujuan Admin sebelum unit siap di-scan untuk serah terima fisik.`,
         icon: "⏳",
         onConfirm: () => router.replace("/(tabs)"),
       });
@@ -511,7 +564,7 @@ export default function AssetDetailScreen() {
                 <StatusBadge status={asset.status} />
               )}
 
-              {activeTx?.batch_code && (
+              {!isBorrowable && activeTx?.batch_code && batchSiblingTxs.length > 1 && (
                 <View
                   style={{
                     backgroundColor: theme.isDark ? "rgba(56, 189, 248, 0.18)" : "rgba(2, 132, 199, 0.1)",
@@ -530,8 +583,8 @@ export default function AssetDetailScreen() {
             </View>
           </View>
 
-          {/* BATCH TRANSACTION SIBLINGS & DETAIL VIEW CARD (If part of batch loan) */}
-          {batchSiblingTxs.length > 0 && (
+          {/* BATCH TRANSACTION SIBLINGS & DETAIL VIEW CARD (Only if active ongoing loan is part of batch) */}
+          {!isBorrowable && batchSiblingTxs.length > 1 && (
             <View
               style={{
                 backgroundColor: theme.cardBackground,
@@ -677,14 +730,19 @@ export default function AssetDetailScreen() {
               }}
             >
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <Text
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.85}
-                  style={{ fontSize: 17, fontWeight: "800", color: theme.textPrimary }}
-                >
-                  Form Peminjaman Unit (Single)
-                </Text>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                    style={{ fontSize: 17, fontWeight: "800", color: theme.textPrimary }}
+                  >
+                    Form Peminjaman Unit (1 HT)
+                  </Text>
+                  <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                    Peminjaman Tunggal: {asset.name} ({asset.code})
+                  </Text>
+                </View>
 
                 {profile && (
                   <AnimatedPressable
@@ -824,6 +882,16 @@ export default function AssetDetailScreen() {
                 </ScrollView>
               </View>
 
+              {/* Due Date Picker */}
+              <DueDatePicker value={dueDate} onChange={setDueDate} />
+
+              {/* Official Letter Uploader (Wajib) */}
+              <OfficialLetterUploader
+                value={officialDoc}
+                onChange={setOfficialDoc}
+                isRequired={true}
+              />
+
               {/* Live Loan Summary Box */}
               <View
                 style={{
@@ -842,6 +910,16 @@ export default function AssetDetailScreen() {
                 <Text style={{ fontSize: 13, fontWeight: "700", color: theme.textPrimary }}>
                   {borrowerName.trim() || "Nama Belum Diisi"} • {kesatuan.trim() || "Satuan Kerja"}
                 </Text>
+                {dueDate && (
+                  <Text style={{ fontSize: 11.5, fontWeight: "600", color: "#0284c7" }}>
+                    ⏱️ Batas Waktu: {formatFullDateTimeId(dueDate)}
+                  </Text>
+                )}
+                {officialDoc && (
+                  <Text style={{ fontSize: 11.5, fontWeight: "600", color: "#10b981" }}>
+                    📄 Surat Resmi: {officialDoc.name}
+                  </Text>
+                )}
                 <Text style={{ fontSize: 11, color: theme.textMuted }}>
                   Unit {asset.name} ({asset.code}) akan diajukan ke admin logistik.
                 </Text>
@@ -941,6 +1019,24 @@ export default function AssetDetailScreen() {
                   <Text style={{ fontSize: 11.5, color: theme.primary, marginTop: 2 }}>
                     Disetujui oleh: {approvedAwaitingTx.reviewer.full_name}
                   </Text>
+                )}
+                {approvedAwaitingTx?.due_date && (
+                  <View style={{ marginTop: 4, paddingVertical: 4, paddingHorizontal: 8, backgroundColor: "rgba(14, 165, 233, 0.1)", borderRadius: 6 }}>
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#0284c7" }}>
+                      ⏱️ Batas Pengembalian: {formatFullDateTimeId(approvedAwaitingTx.due_date)}
+                    </Text>
+                  </View>
+                )}
+                {approvedAwaitingTx?.document_url && (
+                  <AnimatedPressable
+                    onPress={() => setViewDocModal({ visible: true, url: approvedAwaitingTx.document_url!, name: approvedAwaitingTx.document_name || "Surat_Resmi" })}
+                    style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: "rgba(16, 185, 129, 0.12)", borderRadius: 8 }}
+                  >
+                    <Ionicons name="document-text" size={16} color="#10b981" />
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#10b981" }}>
+                      Lihat Surat Resmi Terlampir
+                    </Text>
+                  </AnimatedPressable>
                 )}
               </View>
 
@@ -1095,6 +1191,15 @@ export default function AssetDetailScreen() {
         message={modalConfig.message}
         icon={modalConfig.icon}
         isDanger={modalConfig.isDanger}
+      />
+
+      {/* Document Viewer Modal */}
+      <DocumentViewerModal
+        visible={viewDocModal.visible}
+        onClose={() => setViewDocModal((prev) => ({ ...prev, visible: false }))}
+        documentUrl={viewDocModal.url}
+        documentName={viewDocModal.name}
+        title="Surat Perintah / Resmi"
       />
     </LinearGradient>
   );

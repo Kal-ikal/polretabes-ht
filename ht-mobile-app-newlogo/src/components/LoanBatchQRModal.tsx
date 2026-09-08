@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { supabase } from "@/lib/supabase";
 import { useAppTheme } from "@/context/ThemeContext";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { StatusBadge } from "@/components/StatusBadge";
+import { formatShortDateTimeId, getRemainingTimeStatus } from "@/lib/dateUtils";
 import type { Transaction, Asset } from "@/types/database";
 
 export interface GroupedTransactionItem {
@@ -166,6 +167,14 @@ export function LoanBatchQRModal({
               <Text style={{ fontSize: 11.5, color: "rgba(255, 255, 255, 0.85)", marginTop: 2 }}>
                 Ref: {group.batch_code || `#${group.mainTx.id.slice(0, 8)}`} • Pemohon: {group.mainTx.borrower_name}
               </Text>
+              {group.mainTx.due_date && (() => {
+                const rem = getRemainingTimeStatus(group.mainTx.due_date);
+                return (
+                  <Text style={{ fontSize: 11, color: rem?.isOverdue ? "#FECACA" : "#FEF08A", fontWeight: "700", marginTop: 2 }}>
+                    ⏱️ Batas: {formatShortDateTimeId(group.mainTx.due_date)} ({rem?.text})
+                  </Text>
+                );
+              })()}
             </View>
 
             <AnimatedPressable

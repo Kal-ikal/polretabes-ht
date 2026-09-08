@@ -28,6 +28,8 @@ import { useAppTheme } from "@/context/ThemeContext";
 import { getFriendlyErrorMessage } from "@/lib/errorHandler";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Avatar } from "@/components/Avatar";
+import { DocumentViewerModal } from "@/components/DocumentViewerModal";
+import { formatFullDateTimeId, formatShortDateTimeId, getRemainingTimeStatus } from "@/lib/dateUtils";
 import { SkeletonCard } from "@/components/SkeletonCard";
 import { AnimatedPressable } from "@/components/AnimatedPressable";
 import { AppBottomSheet } from "@/components/AppBottomSheet";
@@ -62,7 +64,7 @@ function groupTransactionsByBatch(txList: Transaction[]): GroupedTxItem[] {
   const result: GroupedTxItem[] = [];
 
   map.forEach((items, batchId) => {
-    if (items.length > 0) {
+    if (items.length > 1) {
       result.push({
         id: `batch-${batchId}`,
         isBatch: true,
@@ -71,6 +73,8 @@ function groupTransactionsByBatch(txList: Transaction[]): GroupedTxItem[] {
         items,
         mainTx: items[0],
       });
+    } else if (items.length === 1) {
+      singles.push(items[0]);
     }
   });
 
@@ -117,6 +121,11 @@ export default function HomeScreen() {
   const [rejectModalTx, setRejectModalTx] = useState<Transaction | null>(null);
   const [qrModalGroup, setQrModalGroup] = useState<GroupedTxItem | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [viewDocModal, setViewDocModal] = useState<{ visible: boolean; url: string; name: string }>({
+    visible: false,
+    url: "",
+    name: "",
+  });
   const [actionProcessing, setActionProcessing] = useState(false);
 
   // Petugas Specific State
@@ -216,13 +225,25 @@ export default function HomeScreen() {
       }
 
       // 2. Fetch my pending and approved borrow requests awaiting physical scan
-      const { data: pendingData } = await supabase
+      let pendingQuery = supabase
         .from("transactions")
         .select("*, asset:assets(*)")
         .eq("action", "BORROW")
         .in("status", ["PENDING", "APPROVED"])
         .is("cancelled_at", null)
         .order("created_at", { ascending: false });
+
+      if (profile?.id) {
+        if (profile.nrp) {
+          pendingQuery = pendingQuery.or(
+            `borrower_id.eq.${profile.id},borrower_nrp.eq.${profile.nrp}`
+          );
+        } else {
+          pendingQuery = pendingQuery.eq("borrower_id", profile.id);
+        }
+      }
+
+      const { data: pendingData } = await pendingQuery;
 
       if (pendingData) {
         // Filter: Keep PENDING or APPROVED where asset is still 'tersedia' (awaiting physical pickup)
@@ -244,13 +265,25 @@ export default function HomeScreen() {
 
       if (borrowedAssets && borrowedAssets.length > 0) {
         const assetIds = borrowedAssets.map((a) => a.id);
-        const { data: transData } = await supabase
+        let transQuery = supabase
           .from("transactions")
           .select("*, asset:assets(*)")
           .in("asset_id", assetIds)
           .eq("action", "BORROW")
           .eq("status", "APPROVED")
           .order("created_at", { ascending: false });
+
+        if (profile?.id) {
+          if (profile.nrp) {
+            transQuery = transQuery.or(
+              `borrower_id.eq.${profile.id},borrower_nrp.eq.${profile.nrp}`
+            );
+          } else {
+            transQuery = transQuery.eq("borrower_id", profile.id);
+          }
+        }
+
+        const { data: transData } = await transQuery;
 
         const uniqueMap = new Map<string, Transaction>();
         if (transData) {
@@ -271,7 +304,7 @@ export default function HomeScreen() {
     }
 
     setLoading(false);
-  }, [isAdmin]);
+  }, [isAdmin, profile?.id, profile?.nrp]);
 
   useEffect(() => {
     loadData(true);
@@ -454,7 +487,7 @@ export default function HomeScreen() {
   if (isAdmin) {
     return (
       <LinearGradient colors={theme.backgroundGradient} style={{ flex: 1 }}>
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, maxWidth: 840, width: "100%", alignSelf: "center" }}>
           {/* Admin Header Stats */}
           <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 }}>
             {/* Top Greeting Header */}
@@ -481,25 +514,47 @@ export default function HomeScreen() {
                 </View>
               </View>
 
-              <AnimatedPressable
-                onPress={() => router.push("/(tabs)/assets")}
-                style={{
-                  backgroundColor: isDark ? "rgba(2, 132, 199, 0.2)" : "rgba(2, 132, 199, 0.1)",
-                  borderColor: theme.primary,
-                  borderWidth: 1,
-                  paddingHorizontal: 12,
-                  paddingVertical: 7,
-                  borderRadius: 12,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 4,
-                }}
-              >
-                <Ionicons name="cube-outline" size={16} color={theme.primary} />
-                <Text style={{ color: theme.primary, fontWeight: "700", fontSize: 12 }}>
-                  Master HT
-                </Text>
-              </AnimatedPressable>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <AnimatedPressable
+                  onPress={() => router.push("/admin")}
+                  style={{
+                    backgroundColor: isDark ? "rgba(245, 158, 11, 0.2)" : "rgba(245, 158, 11, 0.1)",
+                    borderColor: "#F59E0B",
+                    borderWidth: 1,
+                    paddingHorizontal: 10,
+                    paddingVertical: 7,
+                    borderRadius: 12,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  <Ionicons name="options-outline" size={15} color="#F59E0B" />
+                  <Text style={{ color: "#F59E0B", fontWeight: "700", fontSize: 12 }}>
+                    Panel Lengkap
+                  </Text>
+                </AnimatedPressable>
+
+                <AnimatedPressable
+                  onPress={() => router.push("/(tabs)/assets")}
+                  style={{
+                    backgroundColor: isDark ? "rgba(2, 132, 199, 0.2)" : "rgba(2, 132, 199, 0.1)",
+                    borderColor: theme.primary,
+                    borderWidth: 1,
+                    paddingHorizontal: 10,
+                    paddingVertical: 7,
+                    borderRadius: 12,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  <Ionicons name="cube-outline" size={15} color={theme.primary} />
+                  <Text style={{ color: theme.primary, fontWeight: "700", fontSize: 12 }}>
+                    Master HT
+                  </Text>
+                </AnimatedPressable>
+              </View>
             </View>
 
             {/* Quick Stat Tiles - Interactive with High Contrast */}
@@ -760,6 +815,22 @@ export default function HomeScreen() {
                         borderColor: theme.cardBorder,
                       }}
                     >
+                      {/* Borrower Details Row */}
+                      <View style={{ marginBottom: 8, gap: 2 }}>
+                        <Text style={{ fontSize: 13, fontWeight: "700", color: theme.textPrimary }}>
+                          Pemohon: {group.mainTx.borrower_name ?? "Petugas"}
+                        </Text>
+                        <Text style={{ fontSize: 11.5, color: theme.textSecondary }}>
+                          NRP: {group.mainTx.borrower_nrp ?? "-"} • Kesatuan: {group.mainTx.kesatuan ?? "-"}
+                        </Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 2 }}>
+                          <Ionicons name="calendar-outline" size={12} color={theme.textMuted} />
+                          <Text style={{ fontSize: 11, color: theme.textSecondary }}>
+                            Diajukan: {formatFullDateTimeId(group.mainTx.created_at)}
+                          </Text>
+                        </View>
+                      </View>
+
                       {group.isBatch ? (
                         <View style={{ gap: 4 }}>
                           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -770,16 +841,13 @@ export default function HomeScreen() {
                               {group.batch_code}
                             </Text>
                           </View>
-                          <Text style={{ fontSize: 11, color: theme.textSecondary, marginBottom: 4 }}>
-                            Diajukan: {new Date(group.mainTx.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} WIB
-                          </Text>
-                          <View style={{ gap: 3, marginTop: 2 }}>
+                          <View style={{ gap: 3, marginTop: 4 }}>
                             {group.items.map((it, idx) => {
                               const isBorrowed = (it.asset?.status || "").toLowerCase() === "dipinjam";
                               return (
                                 <View key={`${it.id}-${idx}`} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                                   <Text numberOfLines={1} style={{ fontSize: 12, color: theme.textPrimary, flex: 1 }}>
-                                    • {it.asset?.name || "HT"} <Text style={{ color: theme.textMuted }}>({it.asset?.code || "-"})</Text>
+                                    • {it.asset?.name || "HT"} <Text style={{ color: theme.textMuted }}>({it.asset?.code || "-"} | SN: {it.asset?.serial_number || "-"})</Text>
                                   </Text>
                                   {isApprovedTab && (
                                     <Text style={{ fontSize: 10, fontWeight: "800", color: isBorrowed ? "#22C55E" : "#F59E0B" }}>
@@ -792,7 +860,7 @@ export default function HomeScreen() {
                           </View>
                         </View>
                       ) : (
-                        <View style={{ gap: 4 }}>
+                        <View style={{ gap: 3 }}>
                           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                             <Text style={{ fontSize: 14, fontWeight: "800", color: theme.textPrimary }}>
                               {group.mainTx.asset?.name || "Unit HT"}
@@ -801,16 +869,75 @@ export default function HomeScreen() {
                               {group.mainTx.asset?.code}
                             </Text>
                           </View>
-                          <Text style={{ fontSize: 11, color: theme.textSecondary }}>
-                            SN: {group.mainTx.asset?.serial_number || "-"} • Diajukan: {new Date(group.mainTx.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} WIB
+                          <Text style={{ fontSize: 11.5, color: theme.textSecondary }}>
+                            SN: {group.mainTx.asset?.serial_number || "-"}
+                            {group.mainTx.condition ? ` • Kondisi: ${group.mainTx.condition.toUpperCase()}` : ""}
                           </Text>
                         </View>
                       )}
 
                       {group.mainTx.notes && (
                         <Text style={{ fontSize: 12, color: theme.textPrimary, fontStyle: "italic", marginTop: 6 }}>
-                          "{group.mainTx.notes}"
+                          Keperluan: "{group.mainTx.notes}"
                         </Text>
+                      )}
+
+                      {/* Due Date & Remaining Time Status Badge */}
+                      {group.mainTx.due_date && (() => {
+                        const rem = getRemainingTimeStatus(group.mainTx.due_date);
+                        const isOverdue = rem?.isOverdue;
+                        const isWarning = rem?.urgentLevel === "warning";
+                        const badgeBg = isOverdue
+                          ? (theme.isDark ? "rgba(239, 68, 68, 0.2)" : "#FEE2E2")
+                          : isWarning
+                          ? (theme.isDark ? "rgba(245, 158, 11, 0.2)" : "#FEF3C7")
+                          : (theme.isDark ? "rgba(14, 165, 233, 0.15)" : "#E0F2FE");
+                        const badgeBorder = isOverdue ? "#EF4444" : isWarning ? "#F59E0B" : "#0284c7";
+                        const textColor = isOverdue ? "#EF4444" : isWarning ? "#D97706" : "#0284c7";
+
+                        return (
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, backgroundColor: badgeBg, borderColor: badgeBorder, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }}>
+                            <Ionicons name={isOverdue ? "alert-circle" : "alarm-outline"} size={15} color={textColor} />
+                            <Text style={{ fontSize: 11.5, fontWeight: "800", color: textColor, flex: 1 }}>
+                              Jatuh Tempo: {formatFullDateTimeId(group.mainTx.due_date)} {rem ? `(${rem.label})` : ""}
+                            </Text>
+                          </View>
+                        );
+                      })()}
+
+                      {/* Reviewed Info if Approved */}
+                      {isApprovedTab && group.mainTx.reviewed_at && (
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6, backgroundColor: isDark ? "rgba(34, 197, 94, 0.12)" : "#DCFCE7", borderColor: "#22C55E", borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }}>
+                          <Ionicons name="shield-checkmark" size={14} color="#15803D" />
+                          <Text style={{ fontSize: 11, fontWeight: "700", color: isDark ? "#4ADE80" : "#15803D" }}>
+                            Disetujui: {formatFullDateTimeId(group.mainTx.reviewed_at)} {group.mainTx.reviewer?.full_name ? `oleh ${group.mainTx.reviewer.full_name}` : ""}
+                          </Text>
+                        </View>
+                      )}
+
+                      {/* Official Letter Preview Button */}
+                      {group.mainTx.document_url && (
+                        <AnimatedPressable
+                          onPress={() => setViewDocModal({ visible: true, url: group.mainTx.document_url!, name: group.mainTx.document_name || "Surat_Resmi" })}
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 6,
+                            marginTop: 6,
+                            paddingVertical: 6,
+                            paddingHorizontal: 10,
+                            backgroundColor: "rgba(16, 185, 129, 0.12)",
+                            borderColor: "rgba(16, 185, 129, 0.3)",
+                            borderWidth: 1,
+                            borderRadius: 8,
+                          }}
+                        >
+                          <Ionicons name="document-text" size={15} color="#10b981" />
+                          <Text style={{ fontSize: 11.5, fontWeight: "700", color: "#10b981", flex: 1 }} numberOfLines={1}>
+                            Surat Resmi: {group.mainTx.document_name || "Lihat Dokumen"}
+                          </Text>
+                          <Ionicons name="eye-outline" size={14} color="#10b981" />
+                        </AnimatedPressable>
                       )}
                     </View>
 
@@ -912,10 +1039,12 @@ export default function HomeScreen() {
               </View>
 
               <Text style={{ fontSize: 18, fontWeight: "800", color: theme.textPrimary, marginBottom: 4 }}>
-                Konfirmasi Persetujuan
+                {confirmApproveTx?.batch_id ? "Konfirmasi Persetujuan Batch" : "Konfirmasi Persetujuan"}
               </Text>
               <Text style={{ fontSize: 13, color: theme.textSecondary, marginBottom: 20 }}>
-                Setujui peminjaman unit "{confirmApproveTx?.asset?.name}" untuk anggota{" "}
+                {confirmApproveTx?.batch_id
+                  ? `Setujui seluruh permohonan HT dalam batch ${confirmApproveTx.batch_code || ""} untuk anggota `
+                  : `Setujui peminjaman unit "${confirmApproveTx?.asset?.name}" untuk anggota `}
                 <Text style={{ fontWeight: "700", color: theme.textPrimary }}>{confirmApproveTx?.borrower_name}</Text>?
               </Text>
 
@@ -1037,7 +1166,7 @@ export default function HomeScreen() {
   // =========================================================================
   return (
     <LinearGradient colors={theme.backgroundGradient} style={{ flex: 1 }}>
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, maxWidth: 840, width: "100%", alignSelf: "center" }}>
         {/* Officer Greeting Header */}
         <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 10 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -1346,6 +1475,67 @@ export default function HomeScreen() {
                     <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
                       Peminjam: {item.borrower_name} ({item.kesatuan || "-"})
                     </Text>
+
+                    {/* Due Date & Remaining Time Badge */}
+                    {item.due_date && (() => {
+                      const rem = getRemainingTimeStatus(item.due_date);
+                      const isOver = rem?.isOverdue;
+                      return (
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 6,
+                            marginTop: 6,
+                            backgroundColor: isOver ? "rgba(239, 68, 68, 0.15)" : (rem?.urgentLevel === "warning" ? "rgba(245, 158, 11, 0.15)" : "rgba(14, 165, 233, 0.1)"),
+                            borderColor: isOver ? "#ef4444" : (rem?.urgentLevel === "warning" ? "#f59e0b" : "#0284c7"),
+                            borderWidth: 1,
+                            paddingHorizontal: 8,
+                            paddingVertical: 4,
+                            borderRadius: 8,
+                            alignSelf: "flex-start",
+                          }}
+                        >
+                          <Ionicons
+                            name={isOver ? "alert-circle" : "alarm-outline"}
+                            size={14}
+                            color={isOver ? "#ef4444" : (rem?.urgentLevel === "warning" ? "#d97706" : "#0284c7")}
+                          />
+                          <Text
+                            style={{
+                              fontSize: 11,
+                              fontWeight: "700",
+                              color: isOver ? "#ef4444" : (rem?.urgentLevel === "warning" ? "#d97706" : "#0284c7"),
+                            }}
+                          >
+                            {rem?.text} (Batas: {formatShortDateTimeId(item.due_date)})
+                          </Text>
+                        </View>
+                      );
+                    })()}
+
+                    {/* Official Letter Button */}
+                    {item.document_url && (
+                      <AnimatedPressable
+                        onPress={() => setViewDocModal({ visible: true, url: item.document_url!, name: item.document_name || "Surat_Resmi" })}
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 4,
+                          marginTop: 6,
+                          paddingHorizontal: 8,
+                          paddingVertical: 4,
+                          backgroundColor: "rgba(16, 185, 129, 0.12)",
+                          borderRadius: 6,
+                          alignSelf: "flex-start",
+                        }}
+                      >
+                        <Ionicons name="document-text" size={13} color="#10b981" />
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: "#10b981" }}>
+                          Lihat Surat Resmi
+                        </Text>
+                      </AnimatedPressable>
+                    )}
                   </View>
                   <StatusBadge status="dipinjam" />
                 </View>
@@ -1412,11 +1602,29 @@ export default function HomeScreen() {
                   <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <View style={{ flex: 1, marginRight: 8 }}>
                       <Text style={{ fontSize: 15, fontWeight: "800", color: theme.textPrimary }}>
-                        {group.isBatch ? `Permohonan Batch (${group.items.length} Unit HT)` : (group.mainTx.asset?.name || "Unit HT")}
+                        {group.isBatch && group.items.length > 1
+                          ? `Permohonan Batch (${group.items.length} Unit HT)`
+                          : `Peminjaman Tunggal: ${group.mainTx.asset?.name || "Unit HT"}`}
                       </Text>
                       <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
                         Diajukan: {new Date(group.mainTx.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
                       </Text>
+                      {group.mainTx.due_date && (
+                        <Text style={{ fontSize: 11.5, color: "#0284c7", fontWeight: "700", marginTop: 2 }}>
+                          ⏱️ Batas: {formatShortDateTimeId(group.mainTx.due_date)}
+                        </Text>
+                      )}
+                      {group.mainTx.document_url && (
+                        <AnimatedPressable
+                          onPress={() => setViewDocModal({ visible: true, url: group.mainTx.document_url!, name: group.mainTx.document_name || "Surat_Resmi" })}
+                          style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 }}
+                        >
+                          <Ionicons name="document-text" size={13} color="#10b981" />
+                          <Text style={{ fontSize: 11, fontWeight: "700", color: "#10b981" }}>
+                            Surat Resmi Terlampir
+                          </Text>
+                        </AnimatedPressable>
+                      )}
                     </View>
 
                     <View
@@ -1487,7 +1695,9 @@ export default function HomeScreen() {
                     >
                       <Ionicons name="qr-code" size={18} color="#FFFFFF" />
                       <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 13.5 }}>
-                        📷 Scan Fisik Barang ({group.items.length} HT)
+                        {group.isBatch && group.items.length > 1
+                          ? `📷 Scan Fisik Barang (${group.items.length} HT)`
+                          : `📷 Scan Fisik Barang (1 HT)`}
                       </Text>
                     </AnimatedPressable>
                   )}
@@ -1580,6 +1790,15 @@ export default function HomeScreen() {
             setPhotoModalVisible(false);
             router.push("/(tabs)/profile");
           }}
+        />
+
+        {/* Official Document Viewer Modal */}
+        <DocumentViewerModal
+          visible={viewDocModal.visible}
+          onClose={() => setViewDocModal((prev) => ({ ...prev, visible: false }))}
+          documentUrl={viewDocModal.url}
+          documentName={viewDocModal.name}
+          title="Surat Perintah / Resmi (Peminjaman)"
         />
       </View>
     </LinearGradient>

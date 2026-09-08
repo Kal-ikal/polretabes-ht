@@ -4,15 +4,11 @@
     "slug": "ht-peminjaman",
     "scheme": "htpeminjaman",
     "version": "1.0.0",
+    "sdkVersion": "57.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "image": "./assets/images/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0B132B"
-    },
-    "newArchEnabled": true,
+
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.polresta.htpeminjaman",
