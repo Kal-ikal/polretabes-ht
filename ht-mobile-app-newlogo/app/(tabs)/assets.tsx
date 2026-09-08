@@ -29,13 +29,15 @@ import type { Asset, AssetStatus } from "@/types/database";
 interface AssetListItemProps {
   item: Asset;
   isAdmin: boolean;
+  borrowerName?: string;
   onOpenQR: () => void;
   onOverride: () => void;
   onEdit: () => void;
 }
 
-const AssetListItem = ({ item, isAdmin, onOpenQR, onOverride, onEdit }: AssetListItemProps) => {
+const AssetListItem = ({ item, isAdmin, borrowerName, onOpenQR, onOverride, onEdit }: AssetListItemProps) => {
   const { colors, isDark } = useTheme();
+  const isBorrowed = (item.status || "").toLowerCase() === "dipinjam";
 
   return (
     <View
@@ -66,6 +68,14 @@ const AssetListItem = ({ item, isAdmin, onOpenQR, onOverride, onEdit }: AssetLis
           <Text style={{ fontSize: 16, fontWeight: "800", color: colors.textPrimary }}>
             {item.name}
           </Text>
+          {isBorrowed && borrowerName && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 }}>
+              <Ionicons name="person-outline" size={12} color={colors.textSecondary} />
+              <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "600" }}>
+                Dipinjam oleh: {borrowerName}
+              </Text>
+            </View>
+          )}
         </View>
 
         <StatusBadge status={item.status} />
@@ -144,6 +154,7 @@ export default function AdminAssetsScreen() {
   const isAdmin = profile?.role === "admin";
 
   const [assetsList, setAssetsList] = useState<Asset[]>([]);
+  const [borrowerByAssetId, setBorrowerByAssetId] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -183,6 +194,25 @@ export default function AdminAssetsScreen() {
       .order("name", { ascending: true });
 
     const { data: reservedRows } = await supabase.rpc("get_reserved_asset_ids");
+
+    // Nama peminjam TERBARU per aset -- dipakai untuk menampilkan siapa yang
+    // sedang membawa unit HT berstatus 'dipinjam' langsung di kartu unitnya.
+    const { data: borrowTxs } = await supabase
+      .from("transactions")
+      .select("asset_id, borrower_name, created_at")
+      .eq("action", "BORROW")
+      .order("created_at", { ascending: false })
+      .limit(500);
+
+    const borrowerMap: Record<string, string> = {};
+    if (borrowTxs) {
+      for (const tx of borrowTxs as { asset_id: string; borrower_name: string | null }[]) {
+        if (!borrowerMap[tx.asset_id]) {
+          borrowerMap[tx.asset_id] = tx.borrower_name || "-";
+        }
+      }
+    }
+    setBorrowerByAssetId(borrowerMap);
 
     if (rawAssets) {
       const pendingAssetIds = new Set((reservedRows || []).map((t: { asset_id: string }) => t.asset_id));
@@ -657,6 +687,7 @@ export default function AdminAssetsScreen() {
               <AssetListItem
                 item={item}
                 isAdmin={isAdmin}
+                borrowerName={borrowerByAssetId[item.id]}
                 onOpenQR={() => setQrModalAsset(item)}
                 onOverride={() => {
                   setOverrideAsset(item);
